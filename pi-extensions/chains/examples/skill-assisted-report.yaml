@@ -1,0 +1,31 @@
+version: "1"
+
+steps:
+  - id: implement
+    agent: worker
+    task: |
+      Implement:
+      {{input}}
+    output:
+      kind: report
+    tools:
+      mode: allowlist
+      allow: [read, bash, edit, write]
+    skills:
+      - name: notify-me
+        instruction: |
+          Notify the user when the task succeeds or fails.
+          Keep the message short.
+
+  - id: summarize
+    agent: summarizer
+    task: |
+      Summarize the completed work.
+
+      Previous summary:
+      {{prev.summary}}
+
+      Artifacts:
+      {{prev.artifacts}}
+    output:
+      kind: report

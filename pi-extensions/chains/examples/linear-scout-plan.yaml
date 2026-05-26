@@ -1,0 +1,26 @@
+version: "1"
+
+steps:
+  - id: scout
+    agent: scout
+    task: |
+      Scout the codebase for {{input}}
+    output:
+      kind: findings
+    tools:
+      mode: allowlist
+      allow: [read, bash]
+
+  - id: plan
+    agent: planner
+    task: |
+      Create a plan for {{input}}.
+
+      Relevant files:
+      {{steps.scout.files}}
+
+      Insights:
+      {{steps.scout.insights}}
+    output:
+      kind: plan
+    review: true

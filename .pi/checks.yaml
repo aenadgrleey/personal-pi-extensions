@@ -1,0 +1,15 @@
+# checks.yaml — declarative check definitions
+# Each check runs as a shell command. The extension reads this file at runtime.
+
+checks:
+  - name: tsc
+    command: bun run tsc
+    description: TypeScript type checking
+
+  - name: biome
+    command: bun run lint:biome
+    description: Biome linter
+
+  - name: eslint
+    command: bun run lint:eslint
+    description: TypeScript-aware linter (ESLint)

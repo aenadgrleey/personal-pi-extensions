@@ -29,7 +29,7 @@ Skills may live in `personal-context-files` or this repo's `skills/` package. Re
 - `pi-extensions/interaction-components/` — shared interaction contract, hub, and local provider
 - `pi-extensions/telegram/` — Telegram remote-interaction extension with project/global config scope, single-session ownership, session-switch ownership transfer, local commands, Telegram-side session control, and a live working indicator
 - `pi-extensions/indicators.ts` — footer/status indicator customization
-- `pi-extensions/system-context/index.ts` — inject the active model and RUG skill pointer / subagent orchestration guidance into the system prompt
+- `pi-extensions/system-context/index.ts` — optional system-prompt injector for active model notes (not loaded by default)
 - `pi-extensions/notify.ts` — desktop notification helper and commands
 - `pi-extensions/compact/` — compact read, edit & write display (plain absolute paths, no content/diff)
 - `pi-extensions/check.ts` — auto-runs tsc + biome + eslint after agent completes work

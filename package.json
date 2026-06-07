@@ -17,13 +17,16 @@
       "pi-extensions/plan/index.ts",
       "pi-extensions/review/index.ts",
       "pi-extensions/search/index.ts",
-      "pi-extensions/telegram/index.ts"
+      "pi-extensions/telegram/index.ts",
+      "node_modules/@mrclrchtr/supi-rtk/src/extension.ts"
     ]
   },
   "dependencies": {
     "@earendil-works/pi-coding-agent": "^0.78.1",
     "@earendil-works/pi-tui": "^0.78.1",
+    "@mrclrchtr/supi-rtk": "^1.11.2",
     "js-yaml": "^4.1.0",
     "typebox": "^1.1.38"
-  }
+  },
+  "bundledDependencies": ["@mrclrchtr/supi-rtk"]
 }

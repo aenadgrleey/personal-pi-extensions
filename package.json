@@ -11,6 +11,8 @@
       "pi-extensions/check.ts",
       "pi-extensions/codex-swap/index.ts",
       "pi-extensions/compact/index.ts",
+      "node_modules/pi-sensitive-guard/index.ts",
+      "node_modules/@agney/pi-honcho-memory/extensions/index.ts",
       "pi-extensions/indicators.ts",
       "pi-extensions/system-context/index.ts",
       "pi-extensions/notify.ts",
@@ -23,10 +25,15 @@
     "skills": ["./skills"]
   },
   "dependencies": {
+    "@agney/pi-honcho-memory": "0.1.0",
     "@earendil-works/pi-coding-agent": "^0.78.1",
     "@earendil-works/pi-tui": "^0.78.1",
+    "@mariozechner/pi-ai": "npm:@earendil-works/pi-ai@^0.78.1",
+    "@mariozechner/pi-coding-agent": "npm:@earendil-works/pi-coding-agent@^0.78.1",
     "@mrclrchtr/supi-rtk": "^1.11.2",
+    "@sinclair/typebox": "npm:typebox@^1.1.38",
     "js-yaml": "^4.1.0",
+    "pi-sensitive-guard": "0.4.2",
     "typebox": "^1.1.38"
   },
   "bundledDependencies": ["@mrclrchtr/supi-rtk"]

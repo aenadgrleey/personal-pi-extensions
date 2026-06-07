@@ -9,7 +9,7 @@ Read [`rtango-manifest.md`](./rtango-manifest.md) for the exported skills and co
 ## What this repo provides
 
 - TypeScript utilities and extensions in `pi-extensions/`
-- checks and agent config in `.pi/`
+- checks in repository-root `checks.yaml` (with `.pi/checks.yaml` compatibility) and agent config in `.pi/`
 - reusable skills and workflows in `skills/` (via `personal-context-files`)
 - shared interaction components plus a Telegram remote-interaction extension
 
@@ -19,7 +19,7 @@ Keep responsibilities separate:
 
 - use `rtango` for skills and instructions (`personal-context-files`)
 - use `pi install` for Pi package assets (extensions, chains, checks)
-- include `.pi/checks.yaml` in the setup plan when the target repo uses Pi
+- include `checks.yaml` in the setup plan when the target repo uses Pi; keep `.pi/checks.yaml` only when compatibility is needed
 - keep local Pi preferences/secrets as local setup, not exported content
 
 ## Bootstrapping another repo
@@ -44,7 +44,7 @@ Before importing anything, inspect the target repository:
 6. Prefer `kind: collection` for grouped imports and pin the GitHub ref when practical; use individual skill rules only when a whole collection would be overkill.
 7. Run `rtango status` then `rtango sync`.
 8. Inspect the current Pi setup to see what is already available globally or from an existing install.
-9. Install only the missing Pi package assets via `pi install`, ensure `.pi/checks.yaml` is present.
+9. Install only the missing Pi package assets via `pi install`, ensure `checks.yaml` is present (or `.pi/checks.yaml` for compatibility).
 10. Leave a short summary of what was enabled, skipped, and why.
 
 ### Useful exports
@@ -61,7 +61,7 @@ Before importing anything, inspect the target repository:
 - Do not pull in pi checks or chains outside pi.
 - Do not manually copy Pi package assets when package install is the intended path.
 - Do not install duplicate extensions when already available globally.
-- Do not forget `.pi/checks.yaml` when setting up a Pi repo.
+- Do not forget `checks.yaml` (or the compatible `.pi/checks.yaml`) when setting up a Pi repo.
 - Do not assume Android skills belong in a non-Android repo.
 - Do not overwrite existing repo rules without checking local files first.
 - Do not claim a setup succeeded if the target harness cannot support it.

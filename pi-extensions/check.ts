@@ -1,10 +1,10 @@
 /**
- * Check Extension — runs checks declared in `.pi/checks.yaml`
+ * Check Extension — runs checks declared in `checks.yaml` or `.pi/checks.yaml`
  *
- * - Reads check definitions from `.pi/checks.yaml` at runtime.
- * - On `agent_end`: runs checks, sends a custom message with results.
- *   On failure, triggers the agent to fix issues.
- * - `check` tool and `/check` command: run the checks declared in `.pi/checks.yaml`.
+ * - Reads check definitions from `checks.yaml` (preferred) or `.pi/checks.yaml` (compatibility) at runtime.
+ * - On `agent_end`: runs checks after file changes; stays quiet on success.
+ *   On failure, sends a custom message and triggers the agent to fix issues.
+ * - `check` tool and `/check` command: run the checks declared in `checks.yaml` or `.pi/checks.yaml`.
  * - Custom messages render with tool-call-like visual appearance.
  */
 
@@ -26,8 +26,15 @@ interface ChecksFile {
 	checks: CheckDef[];
 }
 
+interface LoadedChecks {
+	location: string;
+	checks: CheckDef[];
+}
+
 interface CheckResult {
 	tool: string;
+	command: string;
+	description?: string;
 	passed: boolean;
 	errors: number;
 	warnings: number;
@@ -35,22 +42,36 @@ interface CheckResult {
 }
 
 interface CheckDetails {
+	source: string;
 	summary: string;
 	results: CheckResult[];
 }
 
 // ── YAML loader ──────────────────────────────────────────────────────────
 
-function loadChecks(cwd: string): CheckDef[] {
-	const path = join(cwd, ".pi", "checks.yaml");
-	try {
-		const raw = readFileSync(path, "utf-8");
-		const file = yaml.load(raw) as ChecksFile;
-		if (!file?.checks || !Array.isArray(file.checks)) return [];
-		return file.checks;
-	} catch {
-		return [];
+function parseChecksFile(path: string): CheckDef[] {
+	const raw = readFileSync(path, "utf-8");
+	const file = yaml.load(raw) as ChecksFile;
+	if (!file?.checks || !Array.isArray(file.checks)) return [];
+	return file.checks;
+}
+
+function loadChecks(cwd: string): LoadedChecks | undefined {
+	const candidates = [
+		{ location: "checks.yaml", path: join(cwd, "checks.yaml") },
+		{ location: ".pi/checks.yaml", path: join(cwd, ".pi", "checks.yaml") },
+	];
+
+	for (const candidate of candidates) {
+		try {
+			const checks = parseChecksFile(candidate.path);
+			if (checks.length > 0) return { location: candidate.location, checks };
+		} catch {
+			// Try the next compatible location.
+		}
 	}
+
+	return undefined;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────
@@ -84,10 +105,20 @@ async function runCheck(
 			}
 		}
 
-		return { tool: check.name, passed, errors, warnings, output };
+		return {
+			tool: check.name,
+			command: check.command,
+			description: check.description,
+			passed,
+			errors,
+			warnings,
+			output,
+		};
 	} catch (err) {
 		return {
 			tool: check.name,
+			command: check.command,
+			description: check.description,
 			passed: false,
 			errors: 1,
 			warnings: 0,
@@ -96,10 +127,16 @@ async function runCheck(
 	}
 }
 
-async function runChecks(exec: ExtensionAPI["exec"], cwd: string): Promise<CheckResult[]> {
-	const checks = loadChecks(cwd);
-	if (checks.length === 0) return [];
-	return Promise.all(checks.map((c) => runCheck(exec, c)));
+async function runChecks(
+	exec: ExtensionAPI["exec"],
+	cwd: string,
+): Promise<{ source: string; results: CheckResult[] } | undefined> {
+	const loaded = loadChecks(cwd);
+	if (!loaded) return undefined;
+	return {
+		source: loaded.location,
+		results: await Promise.all(loaded.checks.map((c) => runCheck(exec, c))),
+	};
 }
 
 function formatSummary(results: CheckResult[]): string {
@@ -120,17 +157,57 @@ function formatSummary(results: CheckResult[]): string {
 function buildErrorText(results: CheckResult[]): string {
 	return results
 		.filter((r) => !r.passed)
-		.map((r) => `[${r.tool}]\n${r.output.split("\n").slice(0, 20).join("\n")}`)
+		.map((r) => `[${r.tool}] ${r.command}\n${r.output.split("\n").slice(0, 20).join("\n")}`)
 		.join("\n\n");
 }
 
-function buildCheckMessage(results: CheckResult[]): { content: string; details: CheckDetails } {
+function formatChecksRun(source: string, results: CheckResult[]): string {
+	const lines = [`Checks from ${source}:`];
+	for (const result of results) {
+		const description = result.description ? ` — ${result.description}` : "";
+		lines.push(`- ${result.tool}: ${result.command}${description}`);
+	}
+	return lines.join("\n");
+}
+
+function buildCheckMessage(source: string, results: CheckResult[]): { content: string; details: CheckDetails } {
 	const summary = formatSummary(results);
 	const allPassed = results.every((r) => r.passed);
+	const checksRun = formatChecksRun(source, results);
 	return {
-		content: allPassed ? "All checks pass." : `Check failed. Fix these issues:\n\n${buildErrorText(results)}`,
-		details: { summary, results },
+		content: allPassed
+			? `${checksRun}\n\nAll checks pass.`
+			: `${checksRun}\n\nCheck failed. Fix these issues:\n\n${buildErrorText(results)}`,
+		details: { source, summary, results },
 	};
+}
+
+function checksPassed(details: CheckDetails | undefined): boolean {
+	return details?.results.every((r) => r.passed) ?? false;
+}
+
+function normalizeCommand(command: string): string {
+	let normalized = command.trim().replace(/\s+/g, " ");
+	normalized = normalized.replace(/^(?:[A-Za-z_][A-Za-z0-9_]*=\S+\s+)+/, "");
+	normalized = normalized.replace(/ -v$/, "");
+	return normalized;
+}
+
+function isKnownCheckCommand(cwd: string, command: string): boolean {
+	const normalized = normalizeCommand(command);
+	const packageCheckCommands = new Set([
+		"bun run check",
+		"npm run check",
+		"pnpm run check",
+		"pnpm check",
+		"yarn check",
+		"yarn run check",
+	]);
+	if (packageCheckCommands.has(normalized)) return true;
+
+	const loaded = loadChecks(cwd);
+	if (!loaded) return false;
+	return loaded.checks.some((check) => normalizeCommand(check.command) === normalized);
 }
 
 const CheckParams = {
@@ -154,6 +231,14 @@ export default function (pi: ExtensionAPI) {
 		}
 		if (event.toolName === "bash" && event.input?.command) {
 			hadFileChanges = true;
+		}
+	});
+
+	pi.on("tool_result", (event, ctx) => {
+		if (event.toolName !== "bash" || event.isError) return;
+		const command = typeof event.input?.command === "string" ? event.input.command : undefined;
+		if (command && isKnownCheckCommand(ctx.cwd, command)) {
+			hadFileChanges = false;
 		}
 	});
 
@@ -211,15 +296,15 @@ export default function (pi: ExtensionAPI) {
 		content: [{ type: "text"; text: string }];
 		details: CheckDetails | undefined;
 	}> {
-		const results = await runChecks(pi.exec, cwd);
-		if (results.length === 0) {
+		const run = await runChecks(pi.exec, cwd);
+		if (!run) {
 			return {
-				content: [{ type: "text" as const, text: "No checks found in .pi/checks.yaml" }],
+				content: [{ type: "text" as const, text: "No checks found in checks.yaml or .pi/checks.yaml" }],
 				details: undefined,
 			};
 		}
 
-		const result = buildCheckMessage(results);
+		const result = buildCheckMessage(run.source, run.results);
 		return {
 			content: [{ type: "text" as const, text: result.content }],
 			details: result.details,
@@ -228,7 +313,7 @@ export default function (pi: ExtensionAPI) {
 
 	// Send check result as a custom message
 	function sendCheckMessage(result: { content: [{ type: "text"; text: string }]; details: CheckDetails | undefined }) {
-		const allPassed = result.details?.results.every((r) => r.passed) ?? true;
+		const allPassed = checksPassed(result.details);
 
 		pi.sendMessage<CheckDetails>(
 			{
@@ -246,8 +331,8 @@ export default function (pi: ExtensionAPI) {
 
 	// Send a "running" message before checks start
 	function sendRunningMessage(cwd: string) {
-		const checks = loadChecks(cwd);
-		const names = checks.map((c) => c.name);
+		const loaded = loadChecks(cwd);
+		const names = loaded?.checks.map((c) => `${c.name}: ${c.command}`) ?? [];
 		pi.sendMessage({
 			customType: "check-running",
 			content: "Running checks…",
@@ -260,12 +345,14 @@ export default function (pi: ExtensionAPI) {
 		name: "check",
 		label: "check",
 		description:
-			"Run the checks declared in .pi/checks.yaml. " +
+			"Run and report the checks declared in checks.yaml or .pi/checks.yaml. " +
+			"The result lists the source file and exact commands before showing pass/fail output. " +
 			"Use this when you want an explicit verification run during the task or after fixing issues. " +
 			"Do not run it just for end-of-task handoff: if files changed, it runs automatically after agent_end and returns on failure.",
-		promptSnippet: "Run project checks from .pi/checks.yaml when you need an explicit verification run",
+		promptSnippet: "Run project checks from checks.yaml or .pi/checks.yaml when you need an explicit verification run",
 		promptGuidelines: [
 			"Use check when you want to verify the current work during the task or after fixing issues.",
+			"The check result shows the loaded checks file and exact commands that ran; no separate shell command is needed just to inspect them.",
 			"Do not run check just for end-of-task handoff; if files changed, it runs automatically after agent_end and returns on failure.",
 			"If check fails, fix the issues and run check again rather than guessing.",
 		],
@@ -280,23 +367,30 @@ export default function (pi: ExtensionAPI) {
 
 			running = true;
 			try {
-				return await runChecksForOutput(ctx.cwd);
+				const result = await runChecksForOutput(ctx.cwd);
+				if (!result.details || checksPassed(result.details)) {
+					hadFileChanges = false;
+				}
+				return result;
 			} finally {
 				running = false;
 			}
 		},
 	});
 
-	// Auto-check after agent finishes — only if files were changed
+	// Auto-check after agent finishes — only if files were changed.
+	// Successful auto-checks are intentionally quiet; failures notify and trigger the agent.
 	pi.on("agent_end", async (_event, ctx) => {
 		if (running || !hadFileChanges) return;
 		running = true;
 
 		try {
 			const result = await runChecksForOutput(ctx.cwd);
-			if (result.details) {
-				sendCheckMessage(result);
+			if (!result.details || checksPassed(result.details)) {
+				hadFileChanges = false;
+				return;
 			}
+			sendCheckMessage(result);
 		} finally {
 			running = false;
 		}
@@ -304,7 +398,7 @@ export default function (pi: ExtensionAPI) {
 
 	// Manual /check command
 	pi.registerCommand("check", {
-		description: "Run checks declared in .pi/checks.yaml",
+		description: "Run checks declared in checks.yaml or .pi/checks.yaml",
 		handler: async (_args, ctx) => {
 			if (running) return;
 			running = true;
@@ -321,6 +415,9 @@ export default function (pi: ExtensionAPI) {
 						display: true,
 						details: undefined,
 					});
+				}
+				if (!result.details || checksPassed(result.details)) {
+					hadFileChanges = false;
 				}
 			} finally {
 				running = false;

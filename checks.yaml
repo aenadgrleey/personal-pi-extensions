@@ -1,6 +1,6 @@
 # checks.yaml — declarative check definitions
-# Compatibility copy for repos that still keep checks under .pi/.
-# Prefer checks.yaml at the repository root for new setups.
+# Each check runs as a shell command. The check extension reads this file first,
+# and still falls back to .pi/checks.yaml for compatibility.
 
 checks:
   - name: tsc

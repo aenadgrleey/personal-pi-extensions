@@ -3,13 +3,13 @@
 
 checks:
   - name: tsc
-    command: bun run tsc
+    command: bash .pi/run-package-script-if-present.sh tsc
     description: TypeScript type checking
 
   - name: biome
-    command: bun run lint:biome
+    command: bash .pi/run-package-script-if-present.sh lint:biome
     description: Biome linter
 
   - name: eslint
-    command: bun run lint:eslint
+    command: bash .pi/run-package-script-if-present.sh lint:eslint
     description: TypeScript-aware linter (ESLint)

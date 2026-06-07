@@ -1,4 +1,4 @@
-import { SessionManager, type ExtensionContext } from "@mariozechner/pi-coding-agent";
+import { SessionManager, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { TelegramStateSnapshot } from "./types.js";
 
 export const TELEGRAM_STATE_TYPE = "telegram-state";

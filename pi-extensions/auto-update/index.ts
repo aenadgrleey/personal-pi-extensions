@@ -10,7 +10,7 @@
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 type InstallMethod = "bun-binary" | "pnpm" | "yarn" | "bun" | "npm" | "unknown";
 
@@ -27,7 +27,7 @@ type SelfUpdateCommand = {
 	display: string;
 };
 
-const PACKAGE_NAME = "@mariozechner/pi-coding-agent";
+const PACKAGE_NAME = "@earendil-works/pi-coding-agent";
 const LATEST_VERSION_URL = "https://pi.dev/api/latest-version";
 
 function parseVersion(value: string): ParsedVersion | undefined {

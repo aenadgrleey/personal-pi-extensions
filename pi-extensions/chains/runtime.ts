@@ -5,7 +5,7 @@ import type {
 	ToolCallEvent,
 	ToolResultEvent,
 	TurnEndEvent,
-} from "@mariozechner/pi-coding-agent";
+} from "@earendil-works/pi-coding-agent";
 import { Text } from "../deps.js";
 import type { ChainNode, ChainOutputKind, ChainStepNode, LoadedChain, LoadedSkill } from "./types.js";
 import { buildStepPrompt, interpolateText, previewResult } from "./render.js";

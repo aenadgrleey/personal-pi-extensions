@@ -3,7 +3,7 @@ import {
 	type ExtensionAPI,
 	type ExtensionCommandContext,
 	type ExtensionContext,
-} from "@mariozechner/pi-coding-agent";
+} from "@earendil-works/pi-coding-agent";
 import { getInteractionBridge, setInteractionBridge } from "../interaction-components/bridge.js";
 import { showAskPrompt } from "../ask-components/index.js";
 import { InteractionHub } from "../interaction-components/hub.js";

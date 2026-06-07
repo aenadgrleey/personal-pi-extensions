@@ -14,9 +14,9 @@ import type {
   ExtensionAPI,
   ReadToolDetails,
   Theme,
-} from "@mariozechner/pi-coding-agent";
+} from "@earendil-works/pi-coding-agent";
 import { createEditTool, createReadTool, createWriteTool, Text } from "../deps.js";
-import type { Component } from "@mariozechner/pi-tui";
+import type { Component } from "@earendil-works/pi-tui";
 
 function countLines(text: string): number {
   let n = 0;

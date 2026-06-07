@@ -1,0 +1,29 @@
+{
+  "name": "personal-pi-extensions",
+  "private": true,
+  "type": "module",
+  "keywords": ["pi-package"],
+  "pi": {
+    "extensions": [
+      "pi-extensions/ask/index.ts",
+      "pi-extensions/auto-update/index.ts",
+      "pi-extensions/chains/index.ts",
+      "pi-extensions/check.ts",
+      "pi-extensions/codex-swap/index.ts",
+      "pi-extensions/compact/index.ts",
+      "pi-extensions/indicators.ts",
+      "pi-extensions/model-context/index.ts",
+      "pi-extensions/notify.ts",
+      "pi-extensions/plan/index.ts",
+      "pi-extensions/review/index.ts",
+      "pi-extensions/search/index.ts",
+      "pi-extensions/telegram/index.ts"
+    ]
+  },
+  "dependencies": {
+    "@earendil-works/pi-coding-agent": "^0.78.1",
+    "@earendil-works/pi-tui": "^0.78.1",
+    "js-yaml": "^4.1.0",
+    "typebox": "^1.1.38"
+  }
+}

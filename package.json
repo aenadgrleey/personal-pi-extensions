@@ -19,7 +19,8 @@
       "pi-extensions/search/index.ts",
       "pi-extensions/telegram/index.ts",
       "node_modules/@mrclrchtr/supi-rtk/src/extension.ts"
-    ]
+    ],
+    "skills": ["./skills"]
   },
   "dependencies": {
     "@earendil-works/pi-coding-agent": "^0.78.1",

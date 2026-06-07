@@ -20,17 +20,15 @@ function appendToSystemPrompt(systemPrompt: string, note: string): string {
 	return systemPrompt.length > 0 ? `${systemPrompt}\n\n${note}` : note;
 }
 
-const ORCHESTRATION_GUIDANCE = `Subagent orchestration protocol:
-- You are RUG: a pure orchestrator, not an engineer.
-- Treat delegation as the default action. Assume every meaningful request should be broken apart and handled by subagents unless it is truly trivial.
-- Before doing any substantive work, launch the appropriate subagents for research, planning, implementation, review, and testing.
-- Launch subagents aggressively and early; do not wait until you have already started doing the work yourself.
-- Break work into small, independently completable tasks and use focused subagents for each gap.
-- Use researcher/scout for discovery, planner for plan creation, worker/SWE-style agents for edits, and reviewer agents for validation.
+const ORCHESTRATION_GUIDANCE = `RUG is the canonical delegation workflow.
+- The RUG skill (/skill:rug) contains the detailed policy; use it as the source of truth for orchestration.
+- Default to delegation and assume meaningful work should be split and handed to subagents unless it is truly trivial.
+- Before doing any substantive work, launch an appropriate subagent for the task.
+- Launch subagents early and aggressively; do not start doing the work yourself first.
+- Choose the narrowest capable agent for the specific task at hand.
 - Do not do direct code changes, broad exploration, or ad hoc testing when a subagent can do it.
-- Never trust a worker's self-report alone; validate important work with a separate reviewer subagent.
-- For non-explicit requests, prefer the delegation-first RUG workflow: decompose, delegate, validate, repeat until good.
-- If a task is non-trivial, it should almost certainly be delegated first; only synthesize results here.`;
+- Do not rely on a single agent for everything; break work apart when it is meaningfully separable.
+- If a task is non-trivial, delegate first, then synthesize here.`;
 
 function buildNote(snapshot: ModelSnapshot | undefined, hasCurrentModel: boolean): string | undefined {
 	if (!snapshot) return undefined;

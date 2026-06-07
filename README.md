@@ -10,14 +10,14 @@ Read [`rtango-manifest.md`](./rtango-manifest.md) for the exported skills and co
 
 - TypeScript utilities and extensions in `pi-extensions/`
 - checks in repository-root `checks.yaml` (with `.pi/checks.yaml` compatibility) and agent config in `.pi/`
-- reusable skills and workflows in `skills/` (via `personal-context-files`)
+- reusable skills and workflows in `skills/` (including repo-local skills like the RUG delegation skill)
 - shared interaction components plus a Telegram remote-interaction extension
 
 ## Setup model
 
 Keep responsibilities separate:
 
-- use `rtango` for skills and instructions (`personal-context-files`)
+- use `rtango` for shared skills and instructions, and `skills/` for repo-local skill packages when needed
 - use `pi install` for Pi package assets (extensions, chains, checks)
 - include `checks.yaml` in the setup plan when the target repo uses Pi; keep `.pi/checks.yaml` only when compatibility is needed
 - keep local Pi preferences/secrets as local setup, not exported content
@@ -89,7 +89,7 @@ Package manager is **bun**. Use `bun install`, `bun add`, `bunx` — not npm/npx
 personal-pi-extensions/
 ├── pi-extensions/           ← TypeScript extensions
 ├── .pi/                     ← checks and agent config
-├── skills/                  ← stubs (skills live in personal-context-files)
+├── skills/                  ← local skills and package-distributed skill content
 ├── package.json
 ├── tsconfig.json
 ├── biome.json

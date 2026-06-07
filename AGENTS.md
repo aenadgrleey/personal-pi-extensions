@@ -19,7 +19,7 @@ Before adding Pi package assets, inspect `~/.pi/agent/settings.json` and the cur
 
 ### Skills
 
-Skills live in `personal-context-files`. Refer to `rtango-manifest.md` for the full inventory.
+Skills may live in `personal-context-files` or this repo's `skills/` package. Refer to `rtango-manifest.md` for the full inventory.
 
 ### TypeScript Extensions
 
@@ -29,7 +29,7 @@ Skills live in `personal-context-files`. Refer to `rtango-manifest.md` for the f
 - `pi-extensions/interaction-components/` — shared interaction contract, hub, and local provider
 - `pi-extensions/telegram/` — Telegram remote-interaction extension with project/global config scope, single-session ownership, session-switch ownership transfer, local commands, Telegram-side session control, and a live working indicator
 - `pi-extensions/indicators.ts` — footer/status indicator customization
-- `pi-extensions/system-context/index.ts` — inject the active model and subagent orchestration guidance into the system prompt
+- `pi-extensions/system-context/index.ts` — inject the active model and RUG skill pointer / subagent orchestration guidance into the system prompt
 - `pi-extensions/notify.ts` — desktop notification helper and commands
 - `pi-extensions/compact/` — compact read, edit & write display (plain absolute paths, no content/diff)
 - `pi-extensions/check.ts` — auto-runs tsc + biome + eslint after agent completes work

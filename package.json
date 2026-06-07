@@ -12,7 +12,7 @@
       "pi-extensions/codex-swap/index.ts",
       "pi-extensions/compact/index.ts",
       "pi-extensions/indicators.ts",
-      "pi-extensions/model-context/index.ts",
+      "pi-extensions/system-context/index.ts",
       "pi-extensions/notify.ts",
       "pi-extensions/plan/index.ts",
       "pi-extensions/review/index.ts",

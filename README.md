@@ -11,14 +11,15 @@ Read [`rtango-manifest.md`](./rtango-manifest.md) for the exported skills and co
 - TypeScript utilities and extensions in `pi-extensions/`
 - checks in repository-root `checks.yaml` (with `.pi/checks.yaml` compatibility) and agent config in `.pi/`
 - reusable skills and workflows in `skills/` (including repo-local skills like the RUG delegation skill)
-- shared interaction components plus a Telegram remote-interaction extension
+- shared interaction components for interactive extension flows
+- a re-exported `@howaboua/pi-codex-conversion` Codex tool/prompt adapter
 
 ## Setup model
 
 Keep responsibilities separate:
 
 - use `rtango` for shared skills and instructions, and `skills/` for repo-local skill packages when needed
-- use `pi install` for Pi package assets (extensions, chains, checks)
+- use `pi install` for Pi package assets (extensions and checks)
 - include `checks.yaml` in the setup plan when the target repo uses Pi; keep `.pi/checks.yaml` only when compatibility is needed
 - keep local Pi preferences/secrets as local setup, not exported content
 
@@ -58,7 +59,7 @@ Before importing anything, inspect the target repository:
 ### What not to do
 
 - Do not copy repo-local agents into the target repo.
-- Do not pull in pi checks or chains outside pi.
+- Do not pull in pi checks outside pi.
 - Do not manually copy Pi package assets when package install is the intended path.
 - Do not install duplicate extensions when already available globally.
 - Do not forget `checks.yaml` (or the compatible `.pi/checks.yaml`) when setting up a Pi repo.
@@ -69,7 +70,7 @@ Before importing anything, inspect the target repository:
 ## Harness rules
 
 - If you are not using rtango yet, treat `rtango-manifest.md` as guidance only.
-- If you are not running inside pi coding agent, do not try to install pi extensions, checks, or chains.
+- If you are not running inside pi coding agent, do not try to install pi extensions or checks.
 - If a capability is missing, skip that section and say so explicitly.
 
 ## Development tooling

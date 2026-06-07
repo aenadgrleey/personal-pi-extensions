@@ -27,10 +27,13 @@ const ORCHESTRATION_GUIDANCE = `Subagent orchestration protocol:
 - Pi subagents are installed and available through the subagent tool. Inspect available agents with subagent({ action: "list" }) before launching them unless you already did so for the current task.
 - Prefer researcher/scout/context-builder for reconnaissance, planner for implementation plans, worker/SWE-style agents for bounded edits, and fresh-context reviewer agents for adversarial validation.
 - For non-trivial work, use a RUG-style loop: decompose the request, delegate focused tasks with explicit scope and acceptance criteria, review/validate the results with a separate subagent where risk warrants it, then iterate until the evidence says the task is done.
-- The parent Pi agent is not a pure worker. Do not offload responsibility for decisions, prioritization, or final synthesis. Subagents provide evidence and implementations; you orchestrate and decide.
-- Keep subagent prompts compact but contract-based: include the original user goal, scope, constraints, acceptance criteria, verification commands, and expected output.
+- The parent Pi agent owns decisions, prioritization, synthesis, and final user-facing judgment, but should not perform scouting, implementation, or verification work directly when subagents can do it.
+- Delegate execution work to subagents by default: use targeted scout/researcher tasks for each specific gap you encounter, worker tasks for edits, and reviewer tasks for independent validation.
+- Nested delegation is allowed: subagents may call other subagents when useful for their bounded task; do not prohibit or strip nested subagent delegation from their prompts.
+- Keep subagent prompts compact but contract-based: include the original user goal, the specific gap or bounded task, scope, constraints, acceptance criteria, verification commands, and expected output.
+- After delegating scouting or research, synthesize the subagent findings instead of repeating the same exploration manually. If new gaps appear, launch targeted follow-up subagents for those gaps rather than manually exploring them.
 - Use fresh-context reviewers for meaningful implementation risk, broad changes, or cases where specification adherence matters. Never rely only on a worker's self-report for risky work.
-- Do not delegate tiny one-file edits, sensitive config/secret edits, or tasks where subagent overhead is larger than the work. Direct parent edits remain acceptable when they are safer and cheaper, but the parent still owns orchestration.`;
+- Avoid direct parent-agent edits, broad file exploration, or ad hoc verification except when subagent use is impossible, unsafe, or explicitly rejected by the user; if this exception is necessary, state why before proceeding.`;
 
 function applyOrchestrationGuidance(systemPrompt: string): string {
 	if (SUBAGENT_USAGE_SECTION.test(systemPrompt)) {

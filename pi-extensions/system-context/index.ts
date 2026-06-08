@@ -16,8 +16,8 @@ function formatModel(snapshot: ModelSnapshot): string {
 	return `${snapshot.provider}/${snapshot.id}`;
 }
 
-function appendToSystemPrompt(systemPrompt: string, note: string): string {
-	return systemPrompt.length > 0 ? `${systemPrompt}\n\n${note}` : note;
+function appendToSystemPrompt(systemPrompt: string | undefined, note: string): string {
+	return systemPrompt && systemPrompt.length > 0 ? `${systemPrompt}\n\n${note}` : note;
 }
 
 function buildNote(snapshot: ModelSnapshot | undefined, hasCurrentModel: boolean): string | undefined {
@@ -44,10 +44,10 @@ export default function (pi: ExtensionAPI): void {
 		if (current) latestModel = current;
 	});
 
-	pi.on("before_agent_start", async (_event, ctx) => {
+	pi.on("before_agent_start", async (event, ctx) => {
 		const current = snapshotModel(ctx.model);
 		if (current) latestModel = current;
 		const note = buildNote(current ?? latestModel, current !== undefined);
-		return note ? { systemPrompt: appendToSystemPrompt(ctx.systemPrompt, note) } : undefined;
+		return note ? { systemPrompt: appendToSystemPrompt(event.systemPrompt, note) } : undefined;
 	});
 }

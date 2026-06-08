@@ -1,1 +1,29 @@
 node_modules/
+
+# >>> rtango managed targets >>>
+skills/caveman/
+skills/commit/
+skills/extract-procedures-into-skills/
+skills/github-pr/
+skills/gitlab-mr/
+skills/grepai-ignore-patterns/
+skills/grepai-init/
+skills/grepai-search-advanced/
+skills/grepai-search-basics/
+skills/grepai-search-tips/
+skills/grepai-storage-gob/
+skills/grepai-trace-callees/
+skills/grepai-trace-callers/
+skills/grepai-trace-graph/
+skills/grepai-troubleshooting/
+skills/grepai-watch-daemon/
+skills/karpathy-guidelines/
+skills/pi-extension-development/
+skills/rtango/
+skills/spec-driven-development/
+skills/subagent-orchestration/
+skills/tdd/
+skills/write-a-skill/
+skills/yeet/
+skills/zoom-out/
+# <<< rtango managed targets <<<

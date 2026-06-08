@@ -4,13 +4,13 @@ TypeScript extensions for the pi coding agent.
 
 ## Entry point
 
-Read [`rtango-manifest.md`](./rtango-manifest.md) for the exported skills and collections inventory.
+Read [`.rtango/spec.yaml`](./.rtango/spec.yaml) for the managed skills inventory and source mapping.
 
 ## What this repo provides
 
 - TypeScript utilities and extensions in `pi-extensions/`
 - checks in repository-root `checks.yaml` (with `.pi/checks.yaml` compatibility) and agent config in `.pi/`
-- reusable skills and workflows in `skills/` (including repo-local skills like the RUG delegation skill)
+- reusable skills and workflows generated into gitignored `skills/` by rtango from `personal-context-files` and curated upstream collections
 - shared interaction components for interactive extension flows
 - a re-exported `@gotgenes/pi-subagents` sub-agent orchestration extension
 - a re-exported `@howaboua/pi-codex-conversion` Codex tool/prompt adapter
@@ -21,7 +21,7 @@ Read [`rtango-manifest.md`](./rtango-manifest.md) for the exported skills and co
 
 Keep responsibilities separate:
 
-- use `rtango` for shared skills and instructions, and `skills/` for repo-local skill packages when needed
+- use `rtango` for shared skills and instructions; `rtango sync` materializes the local `skills/` directory when needed
 - use `pi install` for Pi package assets (extensions and checks)
 - include `checks.yaml` in the setup plan when the target repo uses Pi; keep `.pi/checks.yaml` only when compatibility is needed
 - keep local Pi preferences/secrets as local setup, not exported content
@@ -51,13 +51,12 @@ Before importing anything, inspect the target repository:
 9. Install only the missing Pi package assets via `pi install`, ensure `checks.yaml` is present (or `.pi/checks.yaml` for compatibility).
 10. Leave a short summary of what was enabled, skipped, and why.
 
-### Useful exports
+### Synced skills
 
-- default baseline: `general-agents`, `general-engineering`
-- Android: `android-mvi-boilerplate`, `compose-slot-api`
-- pi work: `pi-extension-development`, `pi-android-sandbox`
-- GitHub flow: `github` collection or `github-pr` plus `yeet`
-- GitLab flow: `gitlab` collection or `gitlab-mr` plus `yeet`
+- personal Pi package work: `pi-extension-development`, `subagent-orchestration`, `extract-procedures-into-skills`
+- handoff workflows: `commit`, `github-pr`, `gitlab-mr`, `yeet`
+- general workflow skills from curated collections: `write-a-skill`, `caveman`, `karpathy-guidelines`, `spec-driven-development`, `tdd`, `zoom-out`
+- GrepAI skills from the curated `grepai` collection: init, ignore patterns, watch daemon, search, trace, GOB storage, troubleshooting
 
 ### What not to do
 
@@ -72,7 +71,7 @@ Before importing anything, inspect the target repository:
 
 ## Harness rules
 
-- If you are not using rtango yet, treat `rtango-manifest.md` as guidance only.
+- If you are not using rtango yet, treat `.rtango/spec.yaml` as guidance only.
 - If you are not running inside pi coding agent, do not try to install pi extensions or checks.
 - If a capability is missing, skip that section and say so explicitly.
 
@@ -92,8 +91,9 @@ Package manager is **bun**. Use `bun install`, `bun add`, `bunx` — not npm/npx
 ```
 personal-pi-extensions/
 ├── pi-extensions/           ← TypeScript extensions
-├── .pi/                     ← checks and agent config
-├── skills/                  ← local skills and package-distributed skill content
+├── .pi/                     ← compatibility checks and agent config
+├── .rtango/                 ← rtango spec and lock for synced skills
+├── skills/                  ← gitignored rtango-managed skill output
 ├── package.json
 ├── tsconfig.json
 ├── biome.json

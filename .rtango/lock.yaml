@@ -1,0 +1,220 @@
+version: 1
+tracked_agents:
+- plain
+deployments:
+- rule_id: pi-extension-development
+  agent: plain
+  source:
+    github: aenadgrleey/personal-context-files
+    ref: '002c7a94a5e39208f2db6c3c99b3db36e28545f6'
+    path: skills/pi-extension-development
+  source_hash: '89270a7ff5399b81cb8befb4fb9fb025e92296b2677135aaaa0771e251b7adb7'
+  content: skills/pi-extension-development/SKILL.md
+  content_hash: '89270a7ff5399b81cb8befb4fb9fb025e92296b2677135aaaa0771e251b7adb7'
+- rule_id: subagent-orchestration
+  agent: plain
+  source:
+    github: aenadgrleey/personal-context-files
+    ref: '002c7a94a5e39208f2db6c3c99b3db36e28545f6'
+    path: skills/subagent-orchestration
+  source_hash: '70c4fa90f7b286ad9a7ab362ada892befbf28ff96efc2d5a513cb0e498f1575f'
+  content: skills/subagent-orchestration/SKILL.md
+  content_hash: '74ffcb3880ce37f64c946698755731c65187c8e8afa0dee67f725a3efd945bbb'
+- rule_id: extract-procedures-into-skills
+  agent: plain
+  source:
+    github: aenadgrleey/personal-context-files
+    ref: '002c7a94a5e39208f2db6c3c99b3db36e28545f6'
+    path: skills/extract-procedures-into-skills
+  source_hash: '0057ec69b2fad8b4a984a0086a656382533d8f54d541bd05bfd098c1b2e5cb0a'
+  content: skills/extract-procedures-into-skills/SKILL.md
+  content_hash: c4d41ce6801e4b4ce1b113a55fe2b7b6832bdfe2b408148294d6b21b11c97fe3
+- rule_id: commit
+  agent: plain
+  source:
+    github: aenadgrleey/personal-context-files
+    ref: '002c7a94a5e39208f2db6c3c99b3db36e28545f6'
+    path: skills/commit
+  source_hash: '703f5948f5d45949ef9f492e37a494d142582640ee0d4c21fa63aa74600d3072'
+  content: skills/commit/SKILL.md
+  content_hash: c95f21a16cf311f47bfd0d60da77094377ba8f49b93eb5e90175dc5678821e91
+- rule_id: github-pr
+  agent: plain
+  source:
+    github: aenadgrleey/personal-context-files
+    ref: '002c7a94a5e39208f2db6c3c99b3db36e28545f6'
+    path: skills/github-pr
+  source_hash: '63a6db163a1bb553508521c844b1cbf6df451a50b43dfe1886dff21a0ab11155'
+  content: skills/github-pr/SKILL.md
+  content_hash: '1e465563995def6fcc448596443445e8a3b4ce6b8d250530f6a4bd51e8e127e3'
+- rule_id: gitlab-mr
+  agent: plain
+  source:
+    github: aenadgrleey/personal-context-files
+    ref: '002c7a94a5e39208f2db6c3c99b3db36e28545f6'
+    path: skills/gitlab-mr
+  source_hash: '1d96a5d2c77d621db389e7f989ea82c38cfd7f1fc161aecc753ece578221b26e'
+  content: skills/gitlab-mr/SKILL.md
+  content_hash: '2f86b703acbb3cfbc6b4914c44a8756fa98b9b0b497ceed6bc6bbff37148cf3d'
+- rule_id: yeet
+  agent: plain
+  source:
+    github: aenadgrleey/personal-context-files
+    ref: '002c7a94a5e39208f2db6c3c99b3db36e28545f6'
+    path: skills/yeet
+  source_hash: '349716155100af42494c1253fb487dccc2be9ece27ef160070f4b1858147f5da'
+  content: skills/yeet/SKILL.md
+  content_hash: ed3b80ba0fe342ab9dbf39cf9e434f7d0e20b61275221dbbe8feb794c1a98414
+- rule_id: write-a-skill
+  agent: plain
+  source:
+    github: mattpocock/skills
+    ref: b843cb5ea74b1fe5e58a0fc23cddef9e66076fb8
+    path: skills/productivity/write-a-skill
+  source_hash: db6e159fa0b3b239365c7e5ba8ddee9c7f31b7222e2c5c83c13dd04b6e13a947
+  content: skills/write-a-skill/SKILL.md
+  content_hash: dc76df33dbd755f70423999622be525a59ae84d8fa7aef3d47e430c807b3dbff
+- rule_id: caveman
+  agent: plain
+  source:
+    github: mattpocock/skills
+    ref: b843cb5ea74b1fe5e58a0fc23cddef9e66076fb8
+    path: skills/productivity/caveman
+  source_hash: '5dfffa8bb47dec3773ca64e9f054fb453273f95a302fd6c706d57ba1750845f8'
+  content: skills/caveman/SKILL.md
+  content_hash: '3ab404750e67566fbbed6866b15c915bbb985a7f0ac14fd4a7837ee067e46cb7'
+- rule_id: karpathy-guidelines
+  agent: plain
+  source:
+    github: forrestchang/andrej-karpathy-skills
+    ref: '2c606141936f1eeef17fa3043a72095b4765b9c2'
+    path: skills/karpathy-guidelines
+  source_hash: '839911cd4a33b8c0aa46c806a7430a0d40469d998c9be9a50eb68fe2f8f46321'
+  content: skills/karpathy-guidelines/SKILL.md
+  content_hash: cc2ee430edb83aeb529a01679a8e0f6c1dc2204f59e8810e3295d5af5c8c8d02
+- rule_id: spec-driven-development
+  agent: plain
+  source:
+    github: addyosmani/agent-skills
+    ref: main
+    path: skills/spec-driven-development
+  source_hash: b93755c3cdf42d081d372de4e88aa9c8fc77a21a56e238395c1e87ef6dbfe0a8
+  content: skills/spec-driven-development/SKILL.md
+  content_hash: d58c805f9afba5e26616c7365ef5e2081322a77a7bed0a7ff8ad8e1fb7b46995
+- rule_id: tdd
+  agent: plain
+  source:
+    github: mattpocock/skills
+    ref: b843cb5ea74b1fe5e58a0fc23cddef9e66076fb8
+    path: skills/engineering/tdd
+  source_hash: '7474d9d86b882e458bec3dceeec155b1ff19e2526a446b31dcf595ab389931b0'
+  content: skills/tdd/SKILL.md
+  content_hash: '28ee95acbf9be1ab5a18619cd90a31e71985a4ef076275dea817b21558aef7a2'
+- rule_id: zoom-out
+  agent: plain
+  source:
+    github: mattpocock/skills
+    ref: b843cb5ea74b1fe5e58a0fc23cddef9e66076fb8
+    path: skills/engineering/zoom-out
+  source_hash: c4dfe7e0fd3e4adbc22385d20aa997cd47672f8641e41a9f22180a3c59c30b77
+  content: skills/zoom-out/SKILL.md
+  content_hash: '517a6303dd591b2423d3776c1275a0c12f1b31fd8e1a428315f4fa1b14c6b27d'
+- rule_id: grepai-init
+  agent: plain
+  source:
+    github: yoanbernabeu/grepai-skills
+    ref: '382d40261c0d41109c6e11872574ba0be9b064d0'
+    path: skills/configuration/grepai-init
+  source_hash: e2d59ac27f4fd36e314fce618b916036b818cd1c46368e77d0a9b7dbdb6d6c07
+  content: skills/grepai-init/SKILL.md
+  content_hash: '9fccbbe4dfc372a9db8595aed96741ec19cb1c3df332e33dd1e7f9c49ac0f3b6'
+- rule_id: grepai-ignore-patterns
+  agent: plain
+  source:
+    github: yoanbernabeu/grepai-skills
+    ref: '382d40261c0d41109c6e11872574ba0be9b064d0'
+    path: skills/configuration/grepai-ignore-patterns
+  source_hash: '9a7fe1c3ca8c484caad67f6c7f0b56df1c5d0fdb88adfe98878a5f2c432ea8b0'
+  content: skills/grepai-ignore-patterns/SKILL.md
+  content_hash: fb6b89185b27f0550457c3d1dd48902740e8eb06e0ce1145e50d15f4409e6216
+- rule_id: grepai-watch-daemon
+  agent: plain
+  source:
+    github: yoanbernabeu/grepai-skills
+    ref: '382d40261c0d41109c6e11872574ba0be9b064d0'
+    path: skills/indexing/grepai-watch-daemon
+  source_hash: '4cc31209b2b74f1eb1b2bd3bd0072ff940c06c5cd11ab0af8001ae2f852ff66f'
+  content: skills/grepai-watch-daemon/SKILL.md
+  content_hash: '18bca49084759d81126abc15f784f358a8f2cd1b4d91466a7cdf47fd7c01949e'
+- rule_id: grepai-search-advanced
+  agent: plain
+  source:
+    github: yoanbernabeu/grepai-skills
+    ref: '382d40261c0d41109c6e11872574ba0be9b064d0'
+    path: skills/search/grepai-search-advanced
+  source_hash: '325ed2a5abe777ec18f3790d02e7c9c843b06dfb2b8f972d664e9143174f1502'
+  content: skills/grepai-search-advanced/SKILL.md
+  content_hash: e0e6a558324d5e0a90741a2babe47b05ab36a4b9485e5d02685a4373450bba26
+- rule_id: grepai-search-basics
+  agent: plain
+  source:
+    github: yoanbernabeu/grepai-skills
+    ref: '382d40261c0d41109c6e11872574ba0be9b064d0'
+    path: skills/search/grepai-search-basics
+  source_hash: '74a333c49c7c3b091035aea995764c8b3775d74bc960cd102e7856bb57b2edcd'
+  content: skills/grepai-search-basics/SKILL.md
+  content_hash: a527aa8eed4612d7c8bb8f4b0feb5f8cc7a00c02c3e2473bddbcfa1a1adc2ff2
+- rule_id: grepai-search-tips
+  agent: plain
+  source:
+    github: yoanbernabeu/grepai-skills
+    ref: '382d40261c0d41109c6e11872574ba0be9b064d0'
+    path: skills/search/grepai-search-tips
+  source_hash: '7435c25bbc715eb6c07086b0d9f6039136b368e8c17281f99ae22fff8a7dc65b'
+  content: skills/grepai-search-tips/SKILL.md
+  content_hash: '4ba59b9ca932aee75b600a7b75a96b0b08493730cc36d48b1336b15607f3604b'
+- rule_id: grepai-trace-callees
+  agent: plain
+  source:
+    github: yoanbernabeu/grepai-skills
+    ref: '382d40261c0d41109c6e11872574ba0be9b064d0'
+    path: skills/trace/grepai-trace-callees
+  source_hash: '6373fa1f35e80d26e0b930af400c2102c65fd3976a1add2e637151ee0300edbb'
+  content: skills/grepai-trace-callees/SKILL.md
+  content_hash: '21bd053c0989e2dd9994dd9b29a84473dcbc3d1b9b8cbaff9473e5c42d311b7b'
+- rule_id: grepai-trace-callers
+  agent: plain
+  source:
+    github: yoanbernabeu/grepai-skills
+    ref: '382d40261c0d41109c6e11872574ba0be9b064d0'
+    path: skills/trace/grepai-trace-callers
+  source_hash: '590cb5fe2191f03b83b1a4975b92d3fec2d8226f85b2c243d5c1ef1c117774eb'
+  content: skills/grepai-trace-callers/SKILL.md
+  content_hash: fad5201ac287579902677d497c6f1d6ebb39d26852bec9fb77a6bc1e55543748
+- rule_id: grepai-trace-graph
+  agent: plain
+  source:
+    github: yoanbernabeu/grepai-skills
+    ref: '382d40261c0d41109c6e11872574ba0be9b064d0'
+    path: skills/trace/grepai-trace-graph
+  source_hash: c081d8dd93e0f965c0360e69f2d4236b591be12e38d58df6ad5ecdab9b183327
+  content: skills/grepai-trace-graph/SKILL.md
+  content_hash: '94209c962ad4469fc09ebaebe192d6d4e0ef491f2eb6334111f5295bfccab252'
+- rule_id: grepai-storage-gob
+  agent: plain
+  source:
+    github: yoanbernabeu/grepai-skills
+    ref: '382d40261c0d41109c6e11872574ba0be9b064d0'
+    path: skills/storage/grepai-storage-gob
+  source_hash: af8a465b72cebd2f0a97db498611b3dfa13583919a889ec00b3724f5e8202fbe
+  content: skills/grepai-storage-gob/SKILL.md
+  content_hash: '4d58b673308d619b2371ff8770ffdf31b43dd7ec98b3bc9494c610b5d7353146'
+- rule_id: grepai-troubleshooting
+  agent: plain
+  source:
+    github: yoanbernabeu/grepai-skills
+    ref: '382d40261c0d41109c6e11872574ba0be9b064d0'
+    path: skills/advanced/grepai-troubleshooting
+  source_hash: bb22f525695610df3f31b696daa9c183d609c0694f461f6cd8a9bb2d44f1a8d8
+  content: skills/grepai-troubleshooting/SKILL.md
+  content_hash: aff10b9b563eb590ce6d05431ac2480003a129947ecac2ca4a1e768d4eec5211

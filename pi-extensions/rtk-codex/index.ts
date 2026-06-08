@@ -15,6 +15,7 @@ const BIOME_CONFIG_FILES = ["biome.json", "biome.jsonc"];
 
 const BIOME_RE = /biome(?:\s|$)/;
 const FIND_RE = /^find(?:\s|$)/;
+const GIT_RE = /^git(?:\s|$)/;
 const RG_RE = /^rg(?:\s|$)/;
 const PACKAGE_LINT_RE = /^(?:pnpm|npm|yarn|bun)\s+(?:run\s+)?lint(?:\s|$)/;
 
@@ -87,6 +88,7 @@ function shouldBypassRtkRewrite(command: string, cwd: string): boolean {
 	if (normalized.startsWith("rtk ")) return true;
 	if (BIOME_RE.test(normalized)) return true;
 	if (FIND_RE.test(normalized)) return true;
+	if (GIT_RE.test(normalized)) return true;
 	if (RG_RE.test(normalized)) return true;
 	if (PACKAGE_LINT_RE.test(normalized) && projectUsesBiome(cwd)) return true;
 	return false;

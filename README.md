@@ -14,6 +14,7 @@ Read [`rtango-manifest.md`](./rtango-manifest.md) for the exported skills and co
 - shared interaction components for interactive extension flows
 - a re-exported `@gotgenes/pi-subagents` sub-agent orchestration extension
 - a re-exported `@howaboua/pi-codex-conversion` Codex tool/prompt adapter
+- an RTK/Codex bridge that rewrites Codex `exec_command` calls through `rtk rewrite` while leaving the Codex terminal implementation intact
 - a re-exported `@teelicht/pi-grepai` GrepAI CLI bridge
 
 ## Setup model

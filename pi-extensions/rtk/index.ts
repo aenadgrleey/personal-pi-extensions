@@ -46,12 +46,6 @@ const PACKAGE_LINT_RE = /^(?:pnpm|npm|yarn|bun)\s+(?:run\s+)?lint(?:\s|$)/;
 
 type RtkConfig = typeof RTK_DEFAULTS;
 
-type ExecCommandInput = {
-	cmd?: unknown;
-	command?: unknown;
-	workdir?: unknown;
-};
-
 type RewriteResult =
 	| { kind: "rewritten" | "unchanged"; command: string }
 	| { kind: "failed"; reason: "timeout" | "unavailable" | "empty-output" | "error" };
@@ -83,10 +77,6 @@ function loadRtkConfig(cwd: string): RtkConfig {
 		...(typeof globalSection === "object" && globalSection !== null ? globalSection : undefined),
 		...(typeof projectSection === "object" && projectSection !== null ? projectSection : undefined),
 	};
-}
-
-function resolveCommandCwd(ctx: ExtensionContext, input: ExecCommandInput): string {
-	return typeof input.workdir === "string" ? resolve(ctx.cwd, input.workdir) : ctx.cwd;
 }
 
 function stripShellWrappers(command: string): string {
@@ -189,6 +179,79 @@ function resolveRtkCommand(command: string, cwd: string, ctx?: ExtensionContext)
 	return { kind: "passthrough", reason: "failed" };
 }
 
+// ---------------------------------------------------------------------------
+// Tool-field interception
+// ---------------------------------------------------------------------------
+//
+// The same field-rewrite table drives both the built-in `bash` tool
+// spawnHook and the codex-adapter `tool_call` bridge. That keeps the shell
+// command rewrite rules in one place, while allowing tool-specific field
+// names (`command`, `cmd`, `chars`) and cwd resolution.
+//
+// Add new tool entries here as the adapter package grows.
+
+type ToolFieldConfig = {
+	fields: readonly string[];
+	resolveCwd: (input: Record<string, unknown>, baseCwd: string, ctx: ExtensionContext) => string;
+};
+
+const TOOL_FIELDS: Readonly<Record<string, ToolFieldConfig>> = {
+	bash: {
+		fields: ["command"],
+		resolveCwd: (_input, baseCwd) => baseCwd,
+	},
+	exec_command: {
+		// The codex adapter accepts `cmd` (canonical) and `command` (alias).
+		fields: ["cmd", "command"],
+		resolveCwd: (input, baseCwd) =>
+			typeof input.workdir === "string" ? resolve(baseCwd, input.workdir) : baseCwd,
+	},
+	write_stdin: {
+		// Bytes to send to a running exec session. For a shell session this is
+		// shell input and RTK should compress the output; for a non-shell REPL
+		// the rewrite will fall through unchanged.
+		fields: ["chars"],
+		resolveCwd: (_input, baseCwd) => baseCwd,
+	},
+};
+
+/** A pure rewrite function: command in, resolution out. Injected for tests. */
+export type ToolRewrite = (
+	command: string,
+	cwd: string,
+	ctx: ExtensionContext,
+) => RtkResolution;
+
+/**
+ * Apply RTK rewriting to the known shell-command fields of a codex-adapter
+ * tool's input. Mutates the input in place; returns the same reference.
+ *
+ * The built-in `bash` tool is intentionally NOT handled here — it has its own
+ * spawnHook-based pipeline. Tools not registered in `TOOL_FIELDS` are left
+ * untouched.
+ */
+export function rewriteToolInput(
+	toolName: keyof typeof TOOL_FIELDS,
+	input: Record<string, unknown>,
+	baseCwd: string,
+	ctx: ExtensionContext,
+	rewrite: ToolRewrite = resolveRtkCommand,
+): Record<string, unknown> {
+	const config = TOOL_FIELDS[toolName];
+	if (!config) return input;
+
+	const cwd = config.resolveCwd(input, baseCwd, ctx);
+	for (const field of config.fields) {
+		const value = input[field];
+		if (typeof value !== "string") continue;
+		const resolution = rewrite(value, cwd, ctx);
+		if (resolution.kind === "rewritten") {
+			input[field] = resolution.command;
+		}
+	}
+	return input;
+}
+
 export default function rtkExtension(pi: ExtensionAPI) {
 	pi.on("session_start", async () => {
 		rtkAvailable = undefined;
@@ -209,17 +272,21 @@ export default function rtkExtension(pi: ExtensionAPI) {
 			const bashTool = createBashTool(cwd, {
 				shellPath: settings.getShellPath(),
 				spawnHook: ({ command, cwd: spawnCwd, env }) => {
-					let userCommand = command;
-					if (prefixWithNewline && command.startsWith(prefixWithNewline)) {
-						userCommand = command.slice(prefixWithNewline.length);
-					}
-					const resolution = resolveRtkCommand(userCommand, spawnCwd, ctx);
-					const finalCommand =
-						resolution.kind === "rewritten"
-							? prefixWithNewline
-								? `${prefixWithNewline}${resolution.command}`
-								: resolution.command
-							: command;
+					const shellInput = prefixWithNewline && command.startsWith(prefixWithNewline)
+						? command.slice(prefixWithNewline.length)
+						: command;
+					const rewritten = rewriteToolInput(
+						"bash",
+						{ command: shellInput },
+						spawnCwd,
+						ctx,
+						resolveRtkCommand,
+					);
+					const rewrittenCommand =
+						typeof rewritten.command === "string" ? rewritten.command : shellInput;
+					const finalCommand = prefixWithNewline
+						? `${prefixWithNewline}${rewrittenCommand}`
+						: rewrittenCommand;
 					return {
 						command: finalCommand,
 						cwd: spawnCwd,
@@ -247,26 +314,18 @@ export default function rtkExtension(pi: ExtensionAPI) {
 		};
 	});
 
-	// Codex `exec_command` (provided by pi-codex-conversion): mutate the
-	// command in-place when the model reaches for it, so RTK also applies to
-	// codex sessions that bypass the standard bash tool.
+	// Codex-adapter tools (provided by pi-codex-conversion): mutate the
+	// known shell-command fields in-place so RTK applies to codex sessions
+	// that bypass the standard bash tool. The dispatch table lives in
+	// `TOOL_FIELDS`; new tools only need a config entry.
 	pi.on("tool_call", (event, ctx) => {
-		if (event.toolName !== "exec_command") return;
-
-		const input = event.input as ExecCommandInput;
-		const command =
-			typeof input.cmd === "string"
-				? input.cmd
-				: typeof input.command === "string"
-					? input.command
-					: undefined;
-		if (!command) return;
-
-		const commandCwd = resolveCommandCwd(ctx, input);
-		const resolution = resolveRtkCommand(command, commandCwd, ctx);
-		if (resolution.kind !== "rewritten") return;
-
-		if (typeof input.cmd === "string") input.cmd = resolution.command;
-		if (typeof input.command === "string") input.command = resolution.command;
+		if (!(event.toolName in TOOL_FIELDS)) return;
+		rewriteToolInput(
+			event.toolName,
+			event.input as Record<string, unknown>,
+			ctx.cwd,
+			ctx,
+			resolveRtkCommand,
+		);
 	});
 }

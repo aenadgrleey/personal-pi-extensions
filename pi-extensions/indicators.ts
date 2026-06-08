@@ -1,7 +1,7 @@
 /**
  * Footer Indicator Extension
  *
- * Replaces token counters with a 5-hour quota indicator.
+ * Replaces token counters with a quota indicator.
  *
  * Sources:
  * - OpenAI/Codex: pi auth storage (`~/.pi/agent/auth.json`) + `https://chatgpt.com/backend-api/wham/usage`
@@ -117,9 +117,9 @@ export default function (pi: ExtensionAPI) {
 		const hours = Math.floor(totalMinutes / 60);
 		const minutes = totalMinutes % 60;
 
-		if (hours <= 0) return `reset:${minutes}m`;
-		if (minutes === 0) return `reset:${hours}h`;
-		return `reset:${hours}h${minutes}m`;
+		if (hours <= 0) return `rst:${minutes}m`;
+		if (minutes === 0) return `rst:${hours}h`;
+		return `rst:${hours}h${minutes}m`;
 	};
 
 	const clampPercent = (value: number) => Math.max(0, Math.min(100, value));
@@ -215,6 +215,11 @@ export default function (pi: ExtensionAPI) {
 					reset_at?: number;
 					limit_window_seconds?: number;
 				};
+				secondary_window?: {
+					used_percent?: number;
+					reset_at?: number;
+					limit_window_seconds?: number;
+				};
 			};
 		};
 
@@ -222,15 +227,38 @@ export default function (pi: ExtensionAPI) {
 		if (!window || typeof window.used_percent !== "number") return undefined;
 		if (window.limit_window_seconds && window.limit_window_seconds !== FIVE_HOURS_MINUTES * 60) return undefined;
 
+		const windows: UsageWindow[] = [
+			{
+				label: "5h",
+				usedPercent: clampPercent(window.used_percent),
+				resetsAt:
+					typeof window.reset_at === "number"
+						? window.reset_at > 10_000_000_000
+							? window.reset_at
+							: window.reset_at * 1000
+						: undefined,
+			},
+		];
+
+		if (json.rate_limit?.secondary_window && typeof json.rate_limit.secondary_window.used_percent === "number") {
+			const secondaryWindow = json.rate_limit.secondary_window;
+			windows.push({
+				label: "7d",
+				usedPercent: clampPercent(secondaryWindow.used_percent),
+				resetsAt:
+					typeof secondaryWindow.reset_at === "number"
+						? secondaryWindow.reset_at > 10_000_000_000
+							? secondaryWindow.reset_at
+							: secondaryWindow.reset_at * 1000
+						: undefined,
+			});
+		}
+
 		return {
-			usedPercent: clampPercent(window.used_percent),
-			resetsAt:
-				typeof window.reset_at === "number"
-					? window.reset_at > 10_000_000_000
-						? window.reset_at
-						: window.reset_at * 1000
-					: undefined,
+			usedPercent: windows[0].usedPercent,
+			resetsAt: windows[0].resetsAt,
 			source: "codex",
+			windows,
 		};
 	};
 
@@ -376,19 +404,20 @@ export default function (pi: ExtensionAPI) {
 	const minimaxUsedPercent = (
 		model: Record<string, unknown>,
 		totalKeys: [string, string],
-		usedKeys: [string, string],
+		remainingCountKeys: [string, string],
 		remainingPercentKeys: [string, string],
 	) => {
 		const total = getNumber(model, ...totalKeys);
-		const used = getNumber(model, ...usedKeys);
-		if (total && total > 0 && typeof used === "number") {
-			// `/v1/token_plan/remains` reports `*_usage_count` as used count.
-			return clampPercent((Math.max(0, Math.min(total, used)) / total) * 100);
+		const remaining = getNumber(model, ...remainingCountKeys);
+		if (total && total > 0 && typeof remaining === "number") {
+			// MiniMax reports `*_usage_count` as remaining quota, not consumed usage.
+			return clampPercent(100 - (Math.max(0, Math.min(total, remaining)) / total) * 100);
 		}
 
 		const remainingPercent = getNumber(model, ...remainingPercentKeys);
 		if (typeof remainingPercent === "number") {
-			return clampPercent(100 - clampPercent(remainingPercent <= 1 ? remainingPercent * 100 : remainingPercent));
+			const normalizedRemainingPercent = remainingPercent <= 1 ? remainingPercent * 100 : remainingPercent;
+			return clampPercent(100 - clampPercent(normalizedRemainingPercent));
 		}
 
 		return undefined;
@@ -575,7 +604,7 @@ export default function (pi: ExtensionAPI) {
 								.filter(Boolean)
 								.join(" ")
 						: activeProviderNeeds5h(activeProvider)
-							? "usage:-- reset:--"
+							? "usage:-- rst:--"
 							: "";
 					const costStr = `$${cost.toFixed(3)}`;
 					const leftText = [costStr, contextStr].filter(Boolean).join(" ");

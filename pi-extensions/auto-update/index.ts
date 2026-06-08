@@ -156,7 +156,6 @@ export default function (pi: ExtensionAPI) {
 			}
 
 			if (!isNewerVersion(latestVersion, currentVersion)) {
-				ctx.ui.setStatus("auto-update", `✓ pi ${currentVersion} is up to date`);
 				return;
 			}
 

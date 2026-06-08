@@ -6,6 +6,7 @@
       "name": "personal-pi-extensions",
       "dependencies": {
         "@agney/pi-honcho-memory": "0.1.0",
+        "@earendil-works/pi-agent-core": "^0.78.1",
         "@earendil-works/pi-coding-agent": "^0.78.1",
         "@earendil-works/pi-tui": "^0.78.1",
         "@gotgenes/pi-subagents": "^14.0.1",
@@ -14,6 +15,7 @@
         "@mariozechner/pi-coding-agent": "npm:@earendil-works/pi-coding-agent@^0.78.1",
         "@mrclrchtr/supi-rtk": "^1.11.2",
         "@sinclair/typebox": "npm:typebox@^1.1.38",
+        "@teelicht/pi-grepai": "^0.1.1",
         "js-yaml": "^4.1.0",
         "pi-sensitive-guard": "0.4.2",
         "typebox": "^1.1.38",
@@ -173,6 +175,8 @@
     "@smithy/util-buffer-from": ["@smithy/util-buffer-from@2.2.0", "", { "dependencies": { "@smithy/is-array-buffer": "^2.2.0", "tslib": "^2.6.2" } }, "sha512-IJdWBbTcMQ6DA0gdNhh/BwrLkDR+ADW5Kr1aZmd4k3DIF6ezMV4R2NIAmT08wQJ3yUK82thHWmC/TnK/wpMMIA=="],
 
     "@smithy/util-utf8": ["@smithy/util-utf8@2.3.0", "", { "dependencies": { "@smithy/util-buffer-from": "^2.2.0", "tslib": "^2.6.2" } }, "sha512-R8Rdn8Hy72KKcebgLiv8jQcQkXoLMOGGv5uI1/k0l+snqkOzQ1R0ChUBCxWMlBsFMekWjq0wRudIweFs7sKT5A=="],
+
+    "@teelicht/pi-grepai": ["@teelicht/pi-grepai@0.1.1", "", { "peerDependencies": { "@earendil-works/pi-agent-core": "*", "@earendil-works/pi-coding-agent": "*", "typebox": "*" } }, "sha512-FGUAjELHjr63BxFoJHdOuyeWdfZE5R8skrHBEKCntelCuZ4kR8MFnM/SdnkrIxYoNJM3f5iTusnzNutZmRa9kA=="],
 
     "@types/node": ["@types/node@25.9.2", "", { "dependencies": { "undici-types": ">=7.24.0 <7.24.7" } }, "sha512-G05zqtJhcDLb8uslf5EjCxXg9G1KQxiV8OS0R26IC//Eoyitzqe8z37I7cqvnZlrlSfgocQRfSn/AHBZJJFyGw=="],
 

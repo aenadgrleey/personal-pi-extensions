@@ -11,7 +11,7 @@
       "pi-extensions/codex-swap/index.ts",
       "node_modules/@gotgenes/pi-subagents/src/index.ts",
       "node_modules/@howaboua/pi-codex-conversion/src/index.ts",
-      "pi-extensions/rtk-codex/index.ts",
+      "pi-extensions/rtk/index.ts",
       "node_modules/@teelicht/pi-grepai/src/extension/index.ts",
       "node_modules/pi-sensitive-guard/index.ts",
       "node_modules/@agney/pi-honcho-memory/extensions/index.ts",
@@ -20,8 +20,7 @@
       "pi-extensions/notify.ts",
       "pi-extensions/plan/index.ts",
       "pi-extensions/review/index.ts",
-      "pi-extensions/search/index.ts",
-      "node_modules/@mrclrchtr/supi-rtk/src/extension.ts"
+      "pi-extensions/search/index.ts"
     ],
     "skills": ["./skills"]
   },
@@ -34,14 +33,13 @@
     "@howaboua/pi-codex-conversion": "^1.5.21",
     "@mariozechner/pi-ai": "npm:@earendil-works/pi-ai@^0.78.1",
     "@mariozechner/pi-coding-agent": "npm:@earendil-works/pi-coding-agent@^0.78.1",
-    "@mrclrchtr/supi-rtk": "^1.11.2",
     "@sinclair/typebox": "npm:typebox@^1.1.38",
     "@teelicht/pi-grepai": "^0.1.1",
     "js-yaml": "^4.1.0",
     "pi-sensitive-guard": "0.4.2",
     "typebox": "^1.1.38"
   },
-  "bundledDependencies": ["@mrclrchtr/supi-rtk"],
+  "bundledDependencies": [],
   "trustedDependencies": [
     "tree-sitter-bash"
   ]

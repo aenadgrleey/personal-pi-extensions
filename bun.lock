@@ -13,7 +13,6 @@
         "@howaboua/pi-codex-conversion": "^1.5.21",
         "@mariozechner/pi-ai": "npm:@earendil-works/pi-ai@^0.78.1",
         "@mariozechner/pi-coding-agent": "npm:@earendil-works/pi-coding-agent@^0.78.1",
-        "@mrclrchtr/supi-rtk": "^1.11.2",
         "@sinclair/typebox": "npm:typebox@^1.1.38",
         "@teelicht/pi-grepai": "^0.1.1",
         "js-yaml": "^4.1.0",
@@ -127,10 +126,6 @@
     "@mariozechner/pi-coding-agent": ["@earendil-works/pi-coding-agent@0.78.1", "", { "dependencies": { "@earendil-works/pi-agent-core": "^0.78.1", "@earendil-works/pi-ai": "^0.78.1", "@earendil-works/pi-tui": "^0.78.1", "@silvia-odwyer/photon-node": "0.3.4", "chalk": "5.6.2", "cross-spawn": "7.0.6", "diff": "8.0.4", "glob": "13.0.6", "highlight.js": "10.7.3", "hosted-git-info": "9.0.3", "ignore": "7.0.5", "jiti": "2.7.0", "minimatch": "10.2.5", "proper-lockfile": "4.1.2", "typebox": "1.1.38", "undici": "8.3.0", "yaml": "2.9.0" }, "optionalDependencies": { "@mariozechner/clipboard": "0.3.9" }, "bin": { "pi": "dist/cli.js" } }, "sha512-Syjf6Ib8UoY5t9ZdKjp0BRrQZuFkFBc8j2KEU9zG/ZnmYPcAxYeioofdv2Q3MEXnHEX2U8sKQptkSnJIdMsd0g=="],
 
     "@mistralai/mistralai": ["@mistralai/mistralai@2.2.1", "", { "dependencies": { "ws": "^8.18.0", "zod": "^3.25.0 || ^4.0.0", "zod-to-json-schema": "^3.25.0" } }, "sha512-uKU8CZmL2RzYKmplsU01hii4p3pe4HqJefpWNRWXm1Tcm0Sm4xXfwSLIy4k7ZCPlbETCGcp69E7hZs+WOJ5itQ=="],
-
-    "@mrclrchtr/supi-core": ["@mrclrchtr/supi-core@1.11.2", "", { "peerDependencies": { "@earendil-works/pi-ai": "*", "@earendil-works/pi-coding-agent": "*", "@earendil-works/pi-tui": "*", "typebox": "*" }, "optionalPeers": ["@earendil-works/pi-ai", "@earendil-works/pi-coding-agent", "@earendil-works/pi-tui", "typebox"] }, "sha512-AYYQfSJfzBGqwAMmpDonhvpSv0qg3Lp1FwqKe+6CfNibMPiyQAhBRq8In/TSFEfeqkEdywPEYMarPJdHaTxubA=="],
-
-    "@mrclrchtr/supi-rtk": ["@mrclrchtr/supi-rtk@1.11.2", "", { "dependencies": { "@mrclrchtr/supi-core": "1.11.2" }, "peerDependencies": { "@earendil-works/pi-coding-agent": "*" }, "optionalPeers": ["@earendil-works/pi-coding-agent"] }, "sha512-6ATDzjHmm8pzy+787bzJtH3llTqGaXzc4472OsDsdRJ4eVz4pWlxF4N8nFWLdJ4LZgRLERHQDjnyt8eMmzUMoQ=="],
 
     "@nodable/entities": ["@nodable/entities@2.1.1", "", {}, "sha512-Pig3HxDIoMgjdEH8OCf/dkcTmLFjJRjWuq8jSnklu284/TKOPibSRERmOykiwmyXTtv61mP+44f3GMx0tLAyjg=="],
 

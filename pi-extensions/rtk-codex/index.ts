@@ -19,6 +19,57 @@ const GIT_RE = /^git(?:\s|$)/;
 const RG_RE = /^rg(?:\s|$)/;
 const PACKAGE_LINT_RE = /^(?:pnpm|npm|yarn|bun)\s+(?:run\s+)?lint(?:\s|$)/;
 
+// Positive cmd → rtk subcommand mappings. Order matters: the first matching
+// rule wins. Each entry rewrites the leading command token only and forwards
+// every argument verbatim so that native flags like `-la`, `-R`, `-n`, `-i`
+// continue to work.
+type RtkMapping = { from: RegExp; to: string };
+const RTK_MAPPINGS: RtkMapping[] = [
+	{ from: /^ls(?=\s|$)/, to: "rtk ls" },
+	{ from: /^tree(?=\s|$)/, to: "rtk tree" },
+	{ from: /^cat(?=\s|$)/, to: "rtk read" },
+	{ from: /^head(?=\s|$)/, to: "rtk read" },
+	{ from: /^tail(?=\s|$)/, to: "rtk read" },
+	{ from: /^less(?=\s|$)/, to: "rtk read" },
+	{ from: /^more(?=\s|$)/, to: "rtk read" },
+	{ from: /^grep(?=\s|$)/, to: "rtk grep" },
+	{ from: /^egrep(?=\s|$)/, to: "rtk grep" },
+	{ from: /^fgrep(?=\s|$)/, to: "rtk grep" },
+	{ from: /^wc(?=\s|$)/, to: "rtk wc" },
+	{ from: /^diff(?=\s|$)/, to: "rtk diff" },
+	{ from: /^env(?=\s|$)/, to: "rtk env" },
+	{ from: /^psql(?=\s|$)/, to: "rtk psql" },
+	{ from: /^docker(?=\s|$)/, to: "rtk docker" },
+	{ from: /^kubectl(?=\s|$)/, to: "rtk kubectl" },
+	{ from: /^cargo(?=\s|$)/, to: "rtk cargo" },
+	{ from: /^pnpm(?=\s|$)/, to: "rtk pnpm" },
+	{ from: /^npm(?=\s|$)/, to: "rtk npm" },
+	{ from: /^npx(?=\s|$)/, to: "rtk npx" },
+	{ from: /^curl(?=\s|$)/, to: "rtk curl" },
+	{ from: /^wget(?=\s|$)/, to: "rtk wget" },
+	{ from: /^tsc(?=\s|$)/, to: "rtk tsc" },
+	{ from: /^vitest(?=\s|$)/, to: "rtk vitest" },
+	{ from: /^prisma(?=\s|$)/, to: "rtk prisma" },
+	{ from: /^prettier(?=\s|$)/, to: "rtk prettier" },
+	{ from: /^playwright(?=\s|$)/, to: "rtk playwright" },
+	{ from: /^ruff(?=\s|$)/, to: "rtk ruff" },
+	{ from: /^pytest(?=\s|$)/, to: "rtk pytest" },
+	{ from: /^mypy(?=\s|$)/, to: "rtk mypy" },
+	{ from: /^pip(?=\s|$)/, to: "rtk pip" },
+	{ from: /^go(?=\s|$)/, to: "rtk go" },
+	{ from: /^golangci-lint(?=\s|$)/, to: "rtk golangci-lint" },
+	{ from: /^gh(?=\s|$)/, to: "rtk gh" },
+	{ from: /^aws(?=\s|$)/, to: "rtk aws" },
+	{ from: /^eslint(?=\s|$)/, to: "rtk lint" },
+];
+
+export function applyRtkMappings(command: string): string | undefined {
+	for (const { from, to } of RTK_MAPPINGS) {
+		if (from.test(command)) return command.replace(from, to);
+	}
+	return undefined;
+}
+
 type RtkConfig = typeof RTK_DEFAULTS;
 
 type ExecCommandInput = {
@@ -82,7 +133,7 @@ function projectUsesBiome(cwd: string): boolean {
 	}
 }
 
-function shouldBypassRtkRewrite(command: string, cwd: string): boolean {
+export function shouldBypassRtkRewrite(command: string, cwd: string): boolean {
 	const normalized = stripShellWrappers(command);
 	if (hasRtkDisabledPrefix(normalized)) return true;
 	if (normalized.startsWith("rtk ")) return true;
@@ -154,7 +205,15 @@ export default function rtkCodexExtension(pi: ExtensionAPI) {
 
 		const commandCwd = resolveCommandCwd(ctx, input);
 		const config = loadRtkConfig(commandCwd);
-		if (!config.enabled || shouldBypassRtkRewrite(command, commandCwd)) return;
+		if (!config.enabled) return;
+		if (shouldBypassRtkRewrite(command, commandCwd)) return;
+
+		const localRewrite = applyRtkMappings(command);
+		if (localRewrite) {
+			if (typeof input.cmd === "string") input.cmd = localRewrite;
+			if (typeof input.command === "string") input.command = localRewrite;
+			return;
+		}
 
 		if (!isRtkAvailable()) {
 			notifyUnavailableRtkOnce(ctx);

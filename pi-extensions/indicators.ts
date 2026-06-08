@@ -6,6 +6,7 @@
  * Sources:
  * - OpenAI/Codex: pi auth storage (`~/.pi/agent/auth.json`) + `https://chatgpt.com/backend-api/wham/usage`
  * - GLM / z.ai: provider API key + z.ai quota API
+ * - MiniMax Token Plan: provider API key + `https://www.minimax.io/v1/token_plan/remains`
  */
 
 import type { AssistantMessage } from "@mariozechner/pi-ai";
@@ -19,7 +20,14 @@ import { join } from "node:path";
 type FiveHourQuota = {
 	usedPercent: number;
 	resetsAt?: number;
-	source: "codex" | "zai";
+	source: "codex" | "zai" | "minimax";
+	windows?: UsageWindow[];
+};
+
+type UsageWindow = {
+	label: string;
+	usedPercent: number;
+	resetsAt?: number;
 };
 
 type CodexAuth = {
@@ -93,7 +101,13 @@ export default function (pi: ExtensionAPI) {
 		return normalized === "openai" || normalized === "openai-codex";
 	};
 
-	const activeProviderNeeds5h = (provider?: string) => isCodexProvider(provider) || isZaiProvider(provider);
+	const isMinimaxProvider = (provider?: string) => {
+		const normalized = provider?.toLowerCase() ?? "";
+		return normalized === "minimax" || normalized.includes("minimax");
+	};
+
+	const activeProviderNeeds5h = (provider?: string) =>
+		isCodexProvider(provider) || isZaiProvider(provider) || isMinimaxProvider(provider);
 
 	const formatCountdown = (resetsAt?: number) => {
 		if (!resetsAt) return "";
@@ -109,6 +123,32 @@ export default function (pi: ExtensionAPI) {
 	};
 
 	const clampPercent = (value: number) => Math.max(0, Math.min(100, value));
+
+	const parseEpochMs = (value?: number | string) => {
+		if (typeof value === "number" && Number.isFinite(value)) {
+			return value > 10_000_000_000 ? value : value * 1000;
+		}
+		if (typeof value === "string" && value.trim()) {
+			const parsed = Date.parse(value);
+			return Number.isFinite(parsed) ? parsed : undefined;
+		}
+		return undefined;
+	};
+
+	const asRecord = (value: unknown): Record<string, unknown> | undefined =>
+		value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
+
+	const getNumber = (record: Record<string, unknown>, ...keys: string[]) => {
+		for (const key of keys) {
+			const value = record[key];
+			if (typeof value === "number" && Number.isFinite(value)) return value;
+			if (typeof value === "string" && value.trim()) {
+				const parsed = Number(value);
+				if (Number.isFinite(parsed)) return parsed;
+			}
+		}
+		return undefined;
+	};
 
 	const decodeJwtPayload = (token?: string): Record<string, unknown> | undefined => {
 		if (!token) return undefined;
@@ -303,6 +343,152 @@ export default function (pi: ExtensionAPI) {
 		};
 	};
 
+	const minimaxQuotaUrls = (baseUrl?: string) => {
+		const urls: string[] = [];
+		try {
+			if (baseUrl?.trim()) {
+				const parsed = new URL(baseUrl);
+				urls.push(`${parsed.origin}/v1/token_plan/remains`);
+			}
+		} catch {
+			// ignore malformed configured URL and use documented fallbacks
+		}
+
+		for (const url of [
+			"https://www.minimax.io/v1/token_plan/remains",
+			"https://api.minimax.io/v1/token_plan/remains",
+			"https://api.minimaxi.com/v1/token_plan/remains",
+		]) {
+			if (!urls.includes(url)) urls.push(url);
+		}
+		return urls;
+	};
+
+	const minimaxResetAt = (model: Record<string, unknown>, capturedAt: number, ...keys: string[]) => {
+		const raw = keys.map((key) => model[key]).find((value) => value !== undefined);
+		const seconds = typeof raw === "number" ? raw : typeof raw === "string" ? Number(raw) : undefined;
+		if (typeof seconds === "number" && Number.isFinite(seconds) && seconds > 0 && seconds < 10_000_000) {
+			return capturedAt + seconds * 1000;
+		}
+		return parseEpochMs(raw as number | string | undefined);
+	};
+
+	const minimaxUsedPercent = (
+		model: Record<string, unknown>,
+		totalKeys: [string, string],
+		usedKeys: [string, string],
+		remainingPercentKeys: [string, string],
+	) => {
+		const total = getNumber(model, ...totalKeys);
+		const used = getNumber(model, ...usedKeys);
+		if (total && total > 0 && typeof used === "number") {
+			// `/v1/token_plan/remains` reports `*_usage_count` as used count.
+			return clampPercent((Math.max(0, Math.min(total, used)) / total) * 100);
+		}
+
+		const remainingPercent = getNumber(model, ...remainingPercentKeys);
+		if (typeof remainingPercent === "number") {
+			return clampPercent(100 - clampPercent(remainingPercent <= 1 ? remainingPercent * 100 : remainingPercent));
+		}
+
+		return undefined;
+	};
+
+	const parseMinimaxQuota = (json: unknown, capturedAt: number): FiveHourQuota | undefined => {
+		const root = asRecord(json);
+		if (!root) return undefined;
+
+		const baseResp = asRecord(root.base_resp) ?? asRecord(root.baseResp);
+		const statusCode = baseResp ? getNumber(baseResp, "status_code", "statusCode") : 0;
+		if (statusCode && statusCode !== 0) return undefined;
+
+		const data = asRecord(root.data) ?? root;
+		const modelRemains = data.model_remains ?? data.modelRemains;
+		if (!Array.isArray(modelRemains)) return undefined;
+
+		const models = modelRemains.map(asRecord).filter((model): model is Record<string, unknown> => Boolean(model));
+		const hasSessionSignal = (model: Record<string, unknown>) =>
+			(getNumber(model, "current_interval_total_count", "currentIntervalTotalCount") ?? 0) > 0 ||
+			getNumber(model, "current_interval_remaining_percent", "currentIntervalRemainingPercent") !== undefined;
+		const textModel =
+			models.find((model) => {
+				const name = String(model.model_name ?? model.modelName ?? "").toLowerCase();
+				return name.startsWith("minimax-m") && hasSessionSignal(model);
+			}) ??
+			models.find((model) => {
+				const name = String(model.model_name ?? model.modelName ?? "").toLowerCase();
+				return (name === "general" || name.includes("text")) && hasSessionSignal(model);
+			}) ??
+			models.find(hasSessionSignal);
+
+		if (!textModel) return undefined;
+
+		const sessionUsedPercent = minimaxUsedPercent(
+			textModel,
+			["current_interval_total_count", "currentIntervalTotalCount"],
+			["current_interval_usage_count", "currentIntervalUsageCount"],
+			["current_interval_remaining_percent", "currentIntervalRemainingPercent"],
+		);
+		if (typeof sessionUsedPercent !== "number") return undefined;
+
+		const windows: UsageWindow[] = [
+			{
+				label: "5h",
+				usedPercent: sessionUsedPercent,
+				resetsAt: minimaxResetAt(textModel, capturedAt, "remains_time", "remainsTime", "end_time", "endTime"),
+			},
+		];
+
+		const weeklyUsedPercent = minimaxUsedPercent(
+			textModel,
+			["current_weekly_total_count", "currentWeeklyTotalCount"],
+			["current_weekly_usage_count", "currentWeeklyUsageCount"],
+			["current_weekly_remaining_percent", "currentWeeklyRemainingPercent"],
+		);
+		if (typeof weeklyUsedPercent === "number") {
+			windows.push({
+				label: "7d",
+				usedPercent: weeklyUsedPercent,
+				resetsAt: minimaxResetAt(
+					textModel,
+					capturedAt,
+					"weekly_remains_time",
+					"weeklyRemainsTime",
+					"weekly_end_time",
+					"weeklyEndTime",
+				),
+			});
+		}
+
+		return {
+			usedPercent: sessionUsedPercent,
+			resetsAt: windows[0].resetsAt,
+			source: "minimax",
+			windows,
+		};
+	};
+
+	const fetchMinimaxQuota = async (apiKey: string, baseUrl?: string): Promise<FiveHourQuota | undefined> => {
+		if (!apiKey) return undefined;
+
+		for (const url of minimaxQuotaUrls(baseUrl)) {
+			const capturedAt = Date.now();
+			const response = await fetch(url, {
+				headers: {
+					Authorization: `Bearer ${apiKey}`,
+					Accept: "application/json",
+					"Content-Type": "application/json",
+				},
+			});
+
+			if (!response.ok) continue;
+			const quota = parseMinimaxQuota(await response.json(), capturedAt);
+			if (quota) return quota;
+		}
+
+		return undefined;
+	};
+
 	const refreshQuota = async (ctx: ExtensionContext) => {
 		if (refreshInFlight) return;
 		refreshInFlight = true;
@@ -317,6 +503,12 @@ export default function (pi: ExtensionAPI) {
 					? await ctx.modelRegistry.getApiKeyForProvider(providerId)
 					: undefined;
 				quota = apiKey ? await fetchZaiFiveHourQuota(apiKey, ctx.model?.baseUrl) : undefined;
+			} else if (isMinimaxProvider(provider)) {
+				const providerId = ctx.model?.provider;
+				const apiKey = providerId
+					? await ctx.modelRegistry.getApiKeyForProvider(providerId)
+					: undefined;
+				quota = apiKey ? await fetchMinimaxQuota(apiKey, ctx.model?.baseUrl) : undefined;
 			} else {
 				quota = undefined;
 				currentCodexAccount = undefined;
@@ -374,7 +566,14 @@ export default function (pi: ExtensionAPI) {
 
 					const activeProvider = ctx.model?.provider?.toLowerCase();
 					const quotaStr = quota
-						? [`usage:${Math.round(quota.usedPercent)}%`, formatCountdown(quota.resetsAt)].filter(Boolean).join(" ")
+						? [
+								`usage:${(quota.windows ?? [{ label: "", usedPercent: quota.usedPercent }])
+									.map((window) => `${window.label ? `${window.label}:` : ""}${Math.round(window.usedPercent)}%`)
+									.join(" ")}`,
+								formatCountdown(quota.resetsAt),
+							]
+								.filter(Boolean)
+								.join(" ")
 						: activeProviderNeeds5h(activeProvider)
 							? "usage:-- reset:--"
 							: "";

@@ -2,7 +2,9 @@
   "name": "personal-pi-extensions",
   "private": true,
   "type": "module",
-  "keywords": ["pi-package"],
+  "keywords": [
+    "pi-package"
+  ],
   "pi": {
     "extensions": [
       "pi-extensions/ask/index.ts",
@@ -22,7 +24,12 @@
       "pi-extensions/review/index.ts",
       "pi-extensions/search/index.ts"
     ],
-    "skills": ["./skills"]
+    "skills": [
+      "./skills"
+    ]
+  },
+  "scripts": {
+    "format": "bunx prettier --write ."
   },
   "dependencies": {
     "@agney/pi-honcho-memory": "0.1.0",

@@ -3,6 +3,10 @@
 # Prefer checks.yaml at the repository root for new setups.
 
 checks:
+  - name: format
+    command: bun run format
+    description: Auto-fix formatting
+
   - name: check-extension-build
     command: bun build pi-extensions/check.ts --target=node --outfile=/tmp/pi-check-extension.js
     description: Smoke-build the check extension

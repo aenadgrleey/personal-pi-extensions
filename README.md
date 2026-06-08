@@ -77,6 +77,8 @@ Before importing anything, inspect the target repository:
 
 ## Development tooling
 
+The check pipeline runs `bun run format` first so formatting is auto-fixed before the other verification steps.
+
 ```bash
 bun run tsc     # type check only
 bun run lint    # biome + eslint

@@ -9,6 +9,7 @@
 ### External Pi packages
 
 The global Pi setup also includes:
+
 - `npm:@howaboua/pi-glm-via-anthropic`
 - `npm:pi-hermes-memory`
 - `npm:pi-web-access`

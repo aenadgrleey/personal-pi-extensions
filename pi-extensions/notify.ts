@@ -37,12 +37,13 @@ export default function (pi: ExtensionAPI) {
   pi.on("session_start", async (_event, ctx) => {
     if (!ctx.hasUI) return;
     ctx.ui.setEditorComponent(
-      (tui, theme, keybindings) => new (class extends CustomEditor {
-        handleInput(data: string): void {
-          cancelPending();
-          super.handleInput(data);
-        }
-      })(tui, theme, keybindings),
+      (tui, theme, keybindings) =>
+        new (class extends CustomEditor {
+          handleInput(data: string): void {
+            cancelPending();
+            super.handleInput(data);
+          }
+        })(tui, theme, keybindings),
     );
   });
 

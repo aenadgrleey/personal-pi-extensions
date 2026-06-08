@@ -191,7 +191,11 @@ function formatResetClock(resetAtSeconds?: number): string {
     date.getMonth() === now.getMonth() &&
     date.getDate() === now.getDate();
   const time = date
-    .toLocaleTimeString([], { hour: "numeric", minute: "2-digit", hour12: true })
+    .toLocaleTimeString([], {
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    })
     .toLowerCase()
     .replace(/\s+/g, "");
   if (sameDay) return time;
@@ -205,7 +209,10 @@ function elapsedPercent(w: CodexUsageWindow): number {
   const remaining = Math.max(0, w.resetAt - Math.floor(Date.now() / 1000));
   return Math.max(
     0,
-    Math.min(100, ((w.limitWindowSeconds - remaining) / w.limitWindowSeconds) * 100),
+    Math.min(
+      100,
+      ((w.limitWindowSeconds - remaining) / w.limitWindowSeconds) * 100,
+    ),
   );
 }
 
@@ -275,7 +282,9 @@ async function fetchCodexUsageSnapshot(
 
     if (!res.ok) {
       const msg =
-        res.status === 401 || res.status === 403 ? "auth expired" : `HTTP ${res.status}`;
+        res.status === 401 || res.status === 403
+          ? "auth expired"
+          : `HTTP ${res.status}`;
       return { windows: [], error: msg };
     }
 
@@ -315,7 +324,7 @@ async function fetchCodexUsageSnapshot(
   } catch (err) {
     const msg = combined.aborted
       ? "timeout/aborted"
-      : (err as Error)?.message ?? "network error";
+      : ((err as Error)?.message ?? "network error");
     return { windows: [], error: msg };
   }
 }
@@ -350,10 +359,15 @@ function profileUsageLine(
   snapshot: CodexUsageSnapshot,
   index?: number,
 ): string {
-  const prefix = index === undefined ? profile.label : `${index + 1}. ${profile.label}`;
-  if (snapshot.error) return `${prefix} - ${shortWho(profile)} - usage: ${snapshot.error}`;
-  if (!snapshot.windows.length) return `${prefix} - ${shortWho(profile)} - usage: no data`;
-  const usage = snapshot.windows.map((w) => `${w.label} ${w.usedPercent}%`).join(" | ");
+  const prefix =
+    index === undefined ? profile.label : `${index + 1}. ${profile.label}`;
+  if (snapshot.error)
+    return `${prefix} - ${shortWho(profile)} - usage: ${snapshot.error}`;
+  if (!snapshot.windows.length)
+    return `${prefix} - ${shortWho(profile)} - usage: no data`;
+  const usage = snapshot.windows
+    .map((w) => `${w.label} ${w.usedPercent}%`)
+    .join(" | ");
   return `${prefix} - ${shortWho(profile)} - ${usage}`;
 }
 
@@ -390,7 +404,8 @@ function profileFromOauth(oauth: OAuthCred, label: string): Profile {
     label,
     savedAt: Date.now(),
     email: inferEmail(oauth),
-    accountId: typeof oauth.accountId === "string" ? oauth.accountId : undefined,
+    accountId:
+      typeof oauth.accountId === "string" ? oauth.accountId : undefined,
     oauth,
   };
 }
@@ -406,7 +421,9 @@ function ensureUniqueLabel(
 ): string {
   const base = sanitizeLabel(preferred) || "profile";
   const taken = new Set(
-    profiles.filter((p) => p.id !== excludeId).map((p) => p.label.toLowerCase()),
+    profiles
+      .filter((p) => p.id !== excludeId)
+      .map((p) => p.label.toLowerCase()),
   );
   if (!taken.has(base.toLowerCase())) return base;
   let i = 2;
@@ -418,11 +435,17 @@ function defaultLabelFor(oauth: OAuthCred, profiles: Profile[]): string {
   const email = inferEmail(oauth);
   const fromEmail = email?.split("@")[0]?.trim();
   if (fromEmail) return ensureUniqueLabel(profiles, fromEmail);
-  const acct = typeof oauth.accountId === "string" ? oauth.accountId.slice(0, 8) : "profile";
+  const acct =
+    typeof oauth.accountId === "string"
+      ? oauth.accountId.slice(0, 8)
+      : "profile";
   return ensureUniqueLabel(profiles, `codex-${acct}`);
 }
 
-function findByRefresh(profiles: Profile[], refresh?: string): Profile | undefined {
+function findByRefresh(
+  profiles: Profile[],
+  refresh?: string,
+): Profile | undefined {
   if (!refresh) return undefined;
   return profiles.find((p) => p.oauth.refresh === refresh);
 }
@@ -476,9 +499,15 @@ function migrateLegacyStore(legacy: LegacyStore): StoreV2 {
 }
 
 function loadStore(): StoreV2 {
-  const raw = readJson<StoreV2 | LegacyStore | Record<string, unknown>>(STORE_FILE);
+  const raw = readJson<StoreV2 | LegacyStore | Record<string, unknown>>(
+    STORE_FILE,
+  );
 
-  if (raw && (raw as StoreV2).version === 2 && Array.isArray((raw as StoreV2).profiles)) {
+  if (
+    raw &&
+    (raw as StoreV2).version === 2 &&
+    Array.isArray((raw as StoreV2).profiles)
+  ) {
     const s = raw as StoreV2;
     return {
       version: 2,
@@ -538,12 +567,17 @@ function readPreferredConfig(file: string): PreferredConfig | null {
   return config;
 }
 
-function getPreferredConfig(cwd: string):
+function getPreferredConfig(
+  cwd: string,
+):
   | { scope: PreferredScope; path: string; preferredProfile: string }
   | undefined {
   const projectFile = getProjectPreferredFile(cwd);
   const project = readPreferredConfig(projectFile);
-  if (typeof project?.preferredProfile === "string" && project.preferredProfile.trim()) {
+  if (
+    typeof project?.preferredProfile === "string" &&
+    project.preferredProfile.trim()
+  ) {
     return {
       scope: "project",
       path: projectFile,
@@ -552,7 +586,10 @@ function getPreferredConfig(cwd: string):
   }
 
   const global = readPreferredConfig(GLOBAL_PREFERRED_FILE);
-  if (typeof global?.preferredProfile === "string" && global.preferredProfile.trim()) {
+  if (
+    typeof global?.preferredProfile === "string" &&
+    global.preferredProfile.trim()
+  ) {
     return {
       scope: "global",
       path: GLOBAL_PREFERRED_FILE,
@@ -568,7 +605,8 @@ function setPreferredConfig(
   cwd: string,
   preferredProfile?: string,
 ): string {
-  const file = scope === "project" ? getProjectPreferredFile(cwd) : GLOBAL_PREFERRED_FILE;
+  const file =
+    scope === "project" ? getProjectPreferredFile(cwd) : GLOBAL_PREFERRED_FILE;
   const value = preferredProfile?.trim();
   if (!value) {
     if (fs.existsSync(file)) fs.rmSync(file);
@@ -578,7 +616,10 @@ function setPreferredConfig(
   return file;
 }
 
-function resolveProfile(profiles: Profile[], selector: string): Profile | undefined {
+function resolveProfile(
+  profiles: Profile[],
+  selector: string,
+): Profile | undefined {
   const target = selector.trim();
   if (!target) return undefined;
 
@@ -617,7 +658,10 @@ async function configurePreferredProfile(
   options?: { startup?: boolean },
 ): Promise<void> {
   if (store.profiles.length === 0) {
-    ctx.ui.notify("No saved Codex profiles. Use /codexswap add first.", "warning");
+    ctx.ui.notify(
+      "No saved Codex profiles. Use /codexswap add first.",
+      "warning",
+    );
     return;
   }
 
@@ -645,12 +689,15 @@ async function configurePreferredProfile(
     return;
   }
 
-  const scope: PreferredScope = action.includes("project") ? "project" : "global";
+  const scope: PreferredScope = action.includes("project")
+    ? "project"
+    : "global";
   const current = getPreferredConfig(ctx.cwd)?.preferredProfile;
   const profileChoice = await ctx.ui.select(
     `Select ${scope} preferred Codex account`,
     store.profiles.map((profile) => {
-      const selected = profile.label === current || profile.id === current ? " (current)" : "";
+      const selected =
+        profile.label === current || profile.id === current ? " (current)" : "";
       return `${preferredProfileLabel(profile)}${selected}`;
     }),
   );
@@ -666,7 +713,10 @@ async function configurePreferredProfile(
   }
 
   const file = setPreferredConfig(scope, ctx.cwd, profile.label);
-  ctx.ui.notify(`Saved ${scope} preferred Codex account: ${profile.label}\n${file}`, "info");
+  ctx.ui.notify(
+    `Saved ${scope} preferred Codex account: ${profile.label}\n${file}`,
+    "info",
+  );
 }
 
 function maybeApplyPreferredProfile(
@@ -739,14 +789,17 @@ export default function codexSwapExtension(pi: ExtensionAPI) {
     const match = findByRefresh(store.profiles, live.refresh);
     const email = inferEmail(live);
     const who =
-      email || (typeof live.accountId === "string" ? live.accountId : "unknown-account");
+      email ||
+      (typeof live.accountId === "string" ? live.accountId : "unknown-account");
     ctx.ui.notify(
       `Live openai-codex: ${who}${match ? `\nSaved profile: ${match.label}` : "\nSaved profile: (not yet saved)"}`,
       "info",
     );
   };
 
-  const ensureIdleForAccountSwitch = (ctx: ExtensionCommandContext): boolean => {
+  const ensureIdleForAccountSwitch = (
+    ctx: ExtensionCommandContext,
+  ): boolean => {
     if (ctx.isIdle()) return true;
     ctx.ui.notify(
       "Cannot switch Codex accounts while the agent is working. Wait until it becomes idle.",
@@ -832,8 +885,12 @@ export default function codexSwapExtension(pi: ExtensionAPI) {
           return;
         }
 
-        const currentId = liveProfile?.id ?? store.activeProfileId ?? firstProfile.id;
-        const idx = Math.max(0, store.profiles.findIndex((p) => p.id === currentId));
+        const currentId =
+          liveProfile?.id ?? store.activeProfileId ?? firstProfile.id;
+        const idx = Math.max(
+          0,
+          store.profiles.findIndex((p) => p.id === currentId),
+        );
         const target = store.profiles[(idx + 1) % store.profiles.length];
         if (!target) {
           ctx.ui.notify("Could not resolve next Codex profile.", "error");
@@ -892,13 +949,17 @@ export default function codexSwapExtension(pi: ExtensionAPI) {
         const usageByProfile = await usageForProfiles(store.profiles);
         const lines = store.profiles.map((p, i) => {
           const active = p.id === store.activeProfileId ? "*" : " ";
-          const liveMark = p.oauth.refresh && p.oauth.refresh === live.refresh ? "(live)" : "";
-          const profileUsage = usageByProfile.find((u) => u.profile.id === p.id)?.usage;
+          const liveMark =
+            p.oauth.refresh && p.oauth.refresh === live.refresh ? "(live)" : "";
+          const profileUsage = usageByProfile.find(
+            (u) => u.profile.id === p.id,
+          )?.usage;
           const usageText = profileUsage
             ? profileUsage.error
               ? profileUsage.error
-              : profileUsage.windows.map((w) => `${w.label} ${w.usedPercent}%`).join(" | ") ||
-                "no data"
+              : profileUsage.windows
+                  .map((w) => `${w.label} ${w.usedPercent}%`)
+                  .join(" | ") || "no data"
             : "usage unknown";
           return `${active} ${i + 1}. ${p.label} - ${shortWho(p)} - ${usageText} ${liveMark}`.trim();
         });
@@ -922,7 +983,11 @@ export default function codexSwapExtension(pi: ExtensionAPI) {
         if (rest === "all" || rest === "*") {
           const all = await usageForProfiles(store.profiles);
           ctx.ui.notify(
-            all.map(({ profile, usage }, i) => profileUsageLine(profile, usage, i)).join("\n"),
+            all
+              .map(({ profile, usage }, i) =>
+                profileUsageLine(profile, usage, i),
+              )
+              .join("\n"),
             "info",
           );
           return;
@@ -935,7 +1000,12 @@ export default function codexSwapExtension(pi: ExtensionAPI) {
             return;
           }
           const usage = await fetchCodexUsageSnapshot(target.oauth);
-          ctx.ui.notify([profileUsageLine(target, usage), "", usageSummary(usage)].join("\n"), "info");
+          ctx.ui.notify(
+            [profileUsageLine(target, usage), "", usageSummary(usage)].join(
+              "\n",
+            ),
+            "info",
+          );
           return;
         }
 
@@ -958,7 +1028,9 @@ export default function codexSwapExtension(pi: ExtensionAPI) {
         const usable = all
           .map((entry) => ({ ...entry, primary: primaryUsage(entry.usage) }))
           .filter(
-            (entry): entry is {
+            (
+              entry,
+            ): entry is {
               profile: Profile;
               usage: CodexUsageSnapshot;
               primary: number;
@@ -976,7 +1048,8 @@ export default function codexSwapExtension(pi: ExtensionAPI) {
         }
 
         const currentId = liveProfile?.id ?? store.activeProfileId;
-        if (currentId && currentId !== best.profile.id) store.lastProfileId = currentId;
+        if (currentId && currentId !== best.profile.id)
+          store.lastProfileId = currentId;
         applyOpenAICodexOAuth(pi, ctx, best.profile.oauth);
         store.activeProfileId = best.profile.id;
         saveStore(store);
@@ -1015,11 +1088,15 @@ export default function codexSwapExtension(pi: ExtensionAPI) {
 
         const lines = sorted.map(({ profile, usage, primary }, i) => {
           const marker = profile.id === store.activeProfileId ? "*" : " ";
-          const rank = primary === undefined ? "--" : String(i + 1).padStart(2, " ");
+          const rank =
+            primary === undefined ? "--" : String(i + 1).padStart(2, " ");
           return `${marker} ${rank}. ${profileUsageLine(profile, usage)}`;
         });
 
-        ctx.ui.notify(["Lowest live Codex usage:", ...lines].join("\n"), "info");
+        ctx.ui.notify(
+          ["Lowest live Codex usage:", ...lines].join("\n"),
+          "info",
+        );
         return;
       }
 
@@ -1043,7 +1120,13 @@ export default function codexSwapExtension(pi: ExtensionAPI) {
         const lines = expired.map((p) => `- ${p.label} (${shortWho(p)})`);
 
         if (dryRun) {
-          ctx.ui.notify([`Would purge ${expired.length} expired profile(s):`, ...lines].join("\n"), "info");
+          ctx.ui.notify(
+            [
+              `Would purge ${expired.length} expired profile(s):`,
+              ...lines,
+            ].join("\n"),
+            "info",
+          );
           return;
         }
 
@@ -1077,7 +1160,11 @@ export default function codexSwapExtension(pi: ExtensionAPI) {
         sub === "save-previous"
       ) {
         const forcedLabel =
-          sub === "save-current" ? "current" : sub === "save-previous" ? "previous" : "";
+          sub === "save-current"
+            ? "current"
+            : sub === "save-previous"
+              ? "previous"
+              : "";
         const desired = sanitizeLabel(forcedLabel || rest);
 
         const existing = findByRefresh(store.profiles, live.refresh);
@@ -1085,13 +1172,21 @@ export default function codexSwapExtension(pi: ExtensionAPI) {
           existing.oauth = live;
           existing.savedAt = Date.now();
           existing.email = inferEmail(live);
-          existing.accountId = typeof live.accountId === "string" ? live.accountId : undefined;
+          existing.accountId =
+            typeof live.accountId === "string" ? live.accountId : undefined;
           if (desired) {
-            existing.label = ensureUniqueLabel(store.profiles, desired, existing.id);
+            existing.label = ensureUniqueLabel(
+              store.profiles,
+              desired,
+              existing.id,
+            );
           }
           store.activeProfileId = existing.id;
           saveStore(store);
-          ctx.ui.notify(`Updated profile: ${existing.label} (${shortWho(existing)})`, "info");
+          ctx.ui.notify(
+            `Updated profile: ${existing.label} (${shortWho(existing)})`,
+            "info",
+          );
           return;
         }
 
@@ -1102,7 +1197,10 @@ export default function codexSwapExtension(pi: ExtensionAPI) {
         store.profiles.push(profile);
         store.activeProfileId = profile.id;
         saveStore(store);
-        ctx.ui.notify(`Saved new profile: ${profile.label} (${shortWho(profile)})`, "info");
+        ctx.ui.notify(
+          `Saved new profile: ${profile.label} (${shortWho(profile)})`,
+          "info",
+        );
         return;
       }
 
@@ -1156,7 +1254,10 @@ export default function codexSwapExtension(pi: ExtensionAPI) {
         const [selector, ...labelParts] = rest.split(/\s+/);
         const newLabelRaw = labelParts.join(" ").trim();
         if (!selector || !newLabelRaw) {
-          ctx.ui.notify("Usage: /codexswap rename <label|#> <new-label>", "error");
+          ctx.ui.notify(
+            "Usage: /codexswap rename <label|#> <new-label>",
+            "error",
+          );
           return;
         }
 
@@ -1166,7 +1267,11 @@ export default function codexSwapExtension(pi: ExtensionAPI) {
           return;
         }
 
-        target.label = ensureUniqueLabel(store.profiles, newLabelRaw, target.id);
+        target.label = ensureUniqueLabel(
+          store.profiles,
+          newLabelRaw,
+          target.id,
+        );
         saveStore(store);
         ctx.ui.notify(`Renamed profile to: ${target.label}`, "info");
         return;

@@ -3,6 +3,10 @@
 # and still falls back to .pi/checks.yaml for compatibility.
 
 checks:
+  - name: format
+    command: bun run format
+    description: Auto-fix formatting
+
   - name: check-extension-build
     command: bun build pi-extensions/check.ts --target=node --outfile=/tmp/pi-check-extension.js
     description: Smoke-build the check extension

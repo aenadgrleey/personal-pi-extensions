@@ -9,13 +9,17 @@ import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { reviewTool } from "../review-components/index.js";
 
 export type {
-	ChainReviewResult,
-	ReviewPromptParams,
-	ReviewPromptResult,
-	ReviewToolDetails,
+  ChainReviewResult,
+  ReviewPromptParams,
+  ReviewPromptResult,
+  ReviewToolDetails,
 } from "../review-components/index.js";
-export { showChainReview, showReviewPrompt, reviewTool } from "../review-components/index.js";
+export {
+  showChainReview,
+  showReviewPrompt,
+  reviewTool,
+} from "../review-components/index.js";
 
 export default function (pi: ExtensionAPI) {
-	pi.registerTool(reviewTool);
+  pi.registerTool(reviewTool);
 }

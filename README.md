@@ -12,6 +12,7 @@ Read [`rtango-manifest.md`](./rtango-manifest.md) for the exported skills and co
 - checks in repository-root `checks.yaml` (with `.pi/checks.yaml` compatibility) and agent config in `.pi/`
 - reusable skills and workflows in `skills/` (including repo-local skills like the RUG delegation skill)
 - shared interaction components for interactive extension flows
+- a re-exported `@gotgenes/pi-subagents` sub-agent orchestration extension
 - a re-exported `@howaboua/pi-codex-conversion` Codex tool/prompt adapter
 
 ## Setup model

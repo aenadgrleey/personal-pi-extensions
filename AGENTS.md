@@ -32,6 +32,7 @@ Skills may live in `personal-context-files` or this repo's `skills/` package. Re
 - `pi-extensions/notify.ts` — desktop notification helper and commands
 - `pi-extensions/check.ts` — auto-runs tsc + biome + eslint after agent completes work
 - `pi-extensions/auto-update/index.ts` — checks for pi updates on startup and updates in the background
+- `node_modules/@gotgenes/pi-subagents/src/index.ts` — re-exported sub-agent orchestration extension
 - `node_modules/@howaboua/pi-codex-conversion/src/index.ts` — re-exported Codex-oriented tool and prompt adapter
 
 ## Working Rules

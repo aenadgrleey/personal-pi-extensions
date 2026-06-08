@@ -8,6 +8,7 @@
         "@agney/pi-honcho-memory": "0.1.0",
         "@earendil-works/pi-coding-agent": "^0.78.1",
         "@earendil-works/pi-tui": "^0.78.1",
+        "@gotgenes/pi-subagents": "^14.0.1",
         "@howaboua/pi-codex-conversion": "^1.5.21",
         "@mariozechner/pi-ai": "npm:@earendil-works/pi-ai@^0.78.1",
         "@mariozechner/pi-coding-agent": "npm:@earendil-works/pi-coding-agent@^0.78.1",
@@ -90,6 +91,8 @@
     "@earendil-works/pi-tui": ["@earendil-works/pi-tui@0.78.1", "", { "dependencies": { "get-east-asian-width": "1.6.0", "marked": "15.0.12" } }, "sha512-07GVQo/38a0yvIPlWDr3RJn1B8gk3ZuIX9h2oIQ+Biyu3JN0KppWmgWHfaWRydQgse5JtC++KDw5MWaIRnV0mw=="],
 
     "@google/genai": ["@google/genai@1.52.0", "", { "dependencies": { "google-auth-library": "^10.3.0", "p-retry": "^4.6.2", "protobufjs": "^7.5.4", "ws": "^8.18.0" }, "peerDependencies": { "@modelcontextprotocol/sdk": "^1.25.2" }, "optionalPeers": ["@modelcontextprotocol/sdk"] }, "sha512-gwSvbpiN/17O9TbsqSsE/OzZcpv5Fo4RQjdngGgogtuB9RsyJ8ZHhX5KjHj1bp5N9snN2eK8LDGXSaWW2hof8Q=="],
+
+    "@gotgenes/pi-subagents": ["@gotgenes/pi-subagents@14.0.1", "", { "dependencies": { "@sinclair/typebox": "^0.34.49" }, "peerDependencies": { "@earendil-works/pi-ai": ">=0.75.0", "@earendil-works/pi-coding-agent": ">=0.75.0", "@earendil-works/pi-tui": ">=0.75.0" } }, "sha512-c7lkRd3pZCNKqlTtr+fcjfqaumOAxuPlKquJCQxo/X7o7x5Bj37JrmRCuB8Y+pmB7pJ4hlSAx/T/5DOy0ShAdA=="],
 
     "@honcho-ai/sdk": ["@honcho-ai/sdk@2.1.2", "", { "dependencies": { "zod": "4.0.0" } }, "sha512-+aRpqK1UgRk0b21RYsQy6OeSXTHARQwPcC4Tv+dSR2QFA2q0kM9oUqPBuGG8boiRBrag7DTthx8g1E/Nwoz7OQ=="],
 
@@ -344,6 +347,8 @@
     "@earendil-works/pi-ai/typebox": ["typebox@1.1.38", "", {}, "sha512-pZ0aQPmMmXoUvSbeuWf/Hzsc+avNw/Zd6VeE8CFgkVGWyuHPJvqeJJDeJqLve+K70LvjYIoleGcoJHPT17cWoA=="],
 
     "@earendil-works/pi-coding-agent/typebox": ["typebox@1.1.38", "", {}, "sha512-pZ0aQPmMmXoUvSbeuWf/Hzsc+avNw/Zd6VeE8CFgkVGWyuHPJvqeJJDeJqLve+K70LvjYIoleGcoJHPT17cWoA=="],
+
+    "@gotgenes/pi-subagents/@sinclair/typebox": ["@sinclair/typebox@0.34.49", "", {}, "sha512-brySQQs7Jtn0joV8Xh9ZV/hZb9Ozb0pmazDIASBkYKCjXrXU3mpcFahmK/z4YDhGkQvP9mWJbVyahdtU5wQA+A=="],
 
     "@mariozechner/pi-ai/typebox": ["typebox@1.1.38", "", {}, "sha512-pZ0aQPmMmXoUvSbeuWf/Hzsc+avNw/Zd6VeE8CFgkVGWyuHPJvqeJJDeJqLve+K70LvjYIoleGcoJHPT17cWoA=="],
 

@@ -2,8 +2,8 @@ export {
   createEditTool,
   createReadTool,
   createWriteTool,
-} from "../node_modules/@earendil-works/pi-coding-agent/dist/core/sdk.js";
-export { CustomEditor } from "../node_modules/@earendil-works/pi-coding-agent/dist/modes/interactive/components/custom-editor.js";
+  CustomEditor,
+} from "@earendil-works/pi-coding-agent";
 export {
   Container,
   Input,
@@ -13,4 +13,4 @@ export {
   TruncatedText,
   truncateToWidth,
   visibleWidth,
-} from "../node_modules/@earendil-works/pi-tui/dist/index.js";
+} from "@earendil-works/pi-tui";

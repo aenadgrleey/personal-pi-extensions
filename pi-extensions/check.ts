@@ -80,12 +80,10 @@ async function runCheck(
 	exec: ExtensionAPI["exec"],
 	check: CheckDef,
 ): Promise<CheckResult> {
-	const parts = check.command.split(/\s+/);
-	const cmd = parts[0] ?? "";
-	const args = parts.slice(1);
-
 	try {
-		const result = await exec(cmd, args, { timeout: 30_000 });
+		// Run the configured command through a shell so checks.yaml supports
+		// normal shell syntax such as globs, environment assignments, and pipes.
+		const result = await exec("bash", ["-lc", check.command], { timeout: 30_000 });
 		const output = (result.stdout + result.stderr).trim();
 		const passed = result.code === 0;
 
@@ -93,7 +91,7 @@ async function runCheck(
 		let warnings = 0;
 
 		// Parse tsc error count
-		if (args[0] === "tsc") {
+		if (/\btsc\b/.test(check.command)) {
 			const lines = output.split("\n").filter((l) => l.includes("error TS"));
 			errors = lines.length;
 		} else if (output.includes("problems")) {

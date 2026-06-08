@@ -2,9 +2,8 @@
 // Architecture mirrors the upstream package (bash-tool spawnHook + user_bash hook
 // + config loading from ~/.pi/agent/supi/config.json and .pi/supi/config.json), and
 // the actual rewriting is delegated to the canonical `rtk rewrite <cmd>` CLI rather
-// than a hand-maintained mapping table. The codex-swap adapter's `exec_command` tool
-// is intercepted in addition to the standard bash tool so that RTK applies to both
-// codex and non-codex sessions.
+// than a hand-maintained mapping table. Tool-call mutation is used as a second
+// interception path so RTK applies to both bash and codex-adapter tool calls.
 //
 // Guards (a superset of the upstream package — adding `find` and `git` to the
 // bypass set because `rtk rewrite` is lossy for those commands in 0.37.x):
@@ -277,12 +276,10 @@ export type ToolRewrite = (
 ) => RtkResolution;
 
 /**
- * Apply RTK rewriting to the known shell-command fields of a codex-adapter
- * tool's input. Mutates the input in place; returns the same reference.
+ * Apply RTK rewriting to the known shell-command fields of a tool's input.
+ * Mutates the input in place; returns the same reference.
  *
- * The built-in `bash` tool is intentionally NOT handled here — it has its own
- * spawnHook-based pipeline. Tools not registered in `TOOL_FIELDS` are left
- * untouched.
+ * Tools not registered in `TOOL_FIELDS` are left untouched.
  */
 export function rewriteToolInput(
   toolName: keyof typeof TOOL_FIELDS,
@@ -357,6 +354,20 @@ export default function rtkExtension(pi: ExtensionAPI) {
     },
   });
 
+  // `tool_call` is the earliest reliable interception point for bash and
+  // codex-adapter tools. Mutate in place so the later tool execution uses the
+  // rewritten command when RTK returns one, and leaves it alone otherwise.
+  pi.on("tool_call", (event, ctx) => {
+    if (!(event.toolName in TOOL_FIELDS)) return;
+    rewriteToolInput(
+      event.toolName as keyof typeof TOOL_FIELDS,
+      event.input as Record<string, unknown>,
+      ctx.cwd,
+      ctx,
+      resolveRtkCommand,
+    );
+  });
+
   // `user_bash` event: when the user runs a bash command from the prompt
   // (e.g. `!ls` or `!!ls`), rewrite it through RTK for consistency. Mirrors
   // supi-rtk's user_bash integration.
@@ -374,20 +385,5 @@ export default function rtkExtension(pi: ExtensionAPI) {
           local.exec(resolution.command, cwd, options),
       },
     };
-  });
-
-  // Codex-adapter tools (provided by pi-codex-conversion): mutate the
-  // known shell-command fields in-place so RTK applies to codex sessions
-  // that bypass the standard bash tool. The dispatch table lives in
-  // `TOOL_FIELDS`; new tools only need a config entry.
-  pi.on("tool_call", (event, ctx) => {
-    if (!(event.toolName in TOOL_FIELDS)) return;
-    rewriteToolInput(
-      event.toolName,
-      event.input as Record<string, unknown>,
-      ctx.cwd,
-      ctx,
-      resolveRtkCommand,
-    );
   });
 }

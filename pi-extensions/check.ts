@@ -1,7 +1,7 @@
 /**
  * Check Extension — runs checks declared in `checks.yaml` or `.pi/checks.yaml`
  *
- * - Reads check definitions from `checks.yaml` (preferred) or `.pi/checks.yaml` (compatibility) at runtime.
+ * - Walks from the current cwd to the git root and reads `checks.yaml` (preferred) or `.pi/checks.yaml` (compatibility) at runtime.
  * - On `agent_end`: runs checks after file changes; stays quiet on success.
  *   On failure, sends a custom message and triggers the agent to fix issues.
  * - `check` tool and `/check` command: run the checks declared in `checks.yaml` or `.pi/checks.yaml`.
@@ -10,8 +10,8 @@
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Text } from "./deps.js";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, join, relative, resolve } from "node:path";
 import yaml from "js-yaml";
 
 // ── Types ────────────────────────────────────────────────────────────────
@@ -28,6 +28,7 @@ interface ChecksFile {
 
 interface LoadedChecks {
 	location: string;
+	cwd: string;
 	checks: CheckDef[];
 }
 
@@ -56,16 +57,33 @@ function parseChecksFile(path: string): CheckDef[] {
 	return file.checks;
 }
 
-function loadChecks(cwd: string): LoadedChecks | undefined {
-	const candidates = [
-		{ location: "checks.yaml", path: join(cwd, "checks.yaml") },
-		{ location: ".pi/checks.yaml", path: join(cwd, ".pi", "checks.yaml") },
-	];
+function formatLocation(cwd: string, path: string): string {
+	return relative(cwd, path) || path;
+}
 
-	for (const candidate of candidates) {
+function checkCandidates(cwd: string): Array<{ location: string; path: string }> {
+	const candidates: Array<{ location: string; path: string }> = [];
+	let dir = resolve(cwd);
+
+	while (true) {
+		const rootChecks = join(dir, "checks.yaml");
+		const piChecks = join(dir, ".pi", "checks.yaml");
+		candidates.push({ location: formatLocation(cwd, rootChecks), path: rootChecks });
+		candidates.push({ location: formatLocation(cwd, piChecks), path: piChecks });
+
+		const parent = dirname(dir);
+		if (existsSync(join(dir, ".git")) || parent === dir) break;
+		dir = parent;
+	}
+
+	return candidates;
+}
+
+function loadChecks(cwd: string): LoadedChecks | undefined {
+	for (const candidate of checkCandidates(cwd)) {
 		try {
 			const checks = parseChecksFile(candidate.path);
-			if (checks.length > 0) return { location: candidate.location, checks };
+			if (checks.length > 0) return { location: candidate.location, cwd: dirname(candidate.path), checks };
 		} catch {
 			// Try the next compatible location.
 		}
@@ -76,14 +94,48 @@ function loadChecks(cwd: string): LoadedChecks | undefined {
 
 // ── Helpers ──────────────────────────────────────────────────────────────
 
+function packageScriptName(command: string): string | undefined {
+	const normalized = command.trim().replace(/\s+/g, " ");
+	const match = normalized.match(/^(?:bun|npm|pnpm|yarn) run ([^\s;&|]+)/);
+	return match?.[1];
+}
+
+function packageScriptSkipMessage(cwd: string, command: string): string | undefined {
+	const script = packageScriptName(command);
+	if (!script) return undefined;
+
+	const packageJsonPath = join(cwd, "package.json");
+	if (!existsSync(packageJsonPath)) return `Skipping ${script}: package.json not found`;
+
+	const raw = readFileSync(packageJsonPath, "utf-8");
+	const packageJson = JSON.parse(raw) as { scripts?: Record<string, string> };
+	if (!packageJson.scripts?.[script]) return `Skipping ${script}: package.json script not configured`;
+
+	return undefined;
+}
+
 async function runCheck(
 	exec: ExtensionAPI["exec"],
 	check: CheckDef,
+	cwd: string,
 ): Promise<CheckResult> {
 	try {
+		const skipped = packageScriptSkipMessage(cwd, check.command);
+		if (skipped) {
+			return {
+				tool: check.name,
+				command: check.command,
+				description: check.description,
+				passed: true,
+				errors: 0,
+				warnings: 0,
+				output: skipped,
+			};
+		}
+
 		// Run the configured command through a shell so checks.yaml supports
 		// normal shell syntax such as globs, environment assignments, and pipes.
-		const result = await exec("bash", ["-lc", check.command], { timeout: 30_000 });
+		const result = await exec("bash", ["-lc", check.command], { cwd, timeout: 30_000 });
 		const output = (result.stdout + result.stderr).trim();
 		const passed = result.code === 0;
 
@@ -133,7 +185,7 @@ async function runChecks(
 	if (!loaded) return undefined;
 	return {
 		source: loaded.location,
-		results: await Promise.all(loaded.checks.map((c) => runCheck(exec, c))),
+		results: await Promise.all(loaded.checks.map((c) => runCheck(exec, c, loaded.cwd))),
 	};
 }
 

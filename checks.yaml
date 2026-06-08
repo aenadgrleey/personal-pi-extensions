@@ -3,14 +3,10 @@
 # and still falls back to .pi/checks.yaml for compatibility.
 
 checks:
-  - name: tsc
-    command: bash .pi/run-package-script-if-present.sh tsc
-    description: TypeScript type checking
+  - name: check-extension-build
+    command: bun build pi-extensions/check.ts --target=node --outfile=/tmp/pi-check-extension.js
+    description: Smoke-build the check extension
 
-  - name: biome
-    command: bash .pi/run-package-script-if-present.sh lint:biome
-    description: Biome linter
-
-  - name: eslint
-    command: bash .pi/run-package-script-if-present.sh lint:eslint
-    description: TypeScript-aware linter (ESLint)
+  - name: rtango
+    command: rtango status --ignore-fetch-failures
+    description: Verify rtango-managed skills are in sync

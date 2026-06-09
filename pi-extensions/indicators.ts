@@ -464,11 +464,18 @@ export default function (pi: ExtensionAPI) {
         : typeof raw === "string"
           ? Number(raw)
           : undefined;
+    // If it looks like an epoch in milliseconds (> 10B), return it directly.
+    // MiniMax `end_time` values like 1778630400000 are millisecond epochs.
+    if (typeof seconds === "number" && seconds > 10_000_000_000) {
+      return seconds;
+    }
+    // Cap session reset at 8 hours to avoid absurd values (weekly quota bugs, etc.)
+    const SESSION_MAX_SECONDS = 8 * 3600;
     if (
       typeof seconds === "number" &&
       Number.isFinite(seconds) &&
       seconds > 0 &&
-      seconds < 10_000_000
+      seconds < SESSION_MAX_SECONDS
     ) {
       return capturedAt + seconds * 1000;
     }
@@ -563,14 +570,7 @@ export default function (pi: ExtensionAPI) {
       {
         label: "5h",
         usedPercent: sessionUsedPercent,
-        resetsAt: minimaxResetAt(
-          textModel,
-          capturedAt,
-          "remains_time",
-          "remainsTime",
-          "end_time",
-          "endTime",
-        ),
+        resetsAt: minimaxResetAt(textModel, capturedAt, "end_time", "endTime"),
       },
     ];
 
@@ -587,20 +587,19 @@ export default function (pi: ExtensionAPI) {
         resetsAt: minimaxResetAt(
           textModel,
           capturedAt,
-          "weekly_remains_time",
-          "weeklyRemainsTime",
           "weekly_end_time",
           "weeklyEndTime",
         ),
       });
     }
 
-    return {
+    const result = {
       usedPercent: sessionUsedPercent,
       resetsAt: windows[0].resetsAt,
-      source: "minimax",
+      source: "minimax" as const,
       windows,
     };
+    return result;
   };
 
   const fetchMinimaxQuota = async (

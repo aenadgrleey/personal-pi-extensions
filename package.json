@@ -13,7 +13,6 @@
       "pi-extensions/codex-swap/index.ts",
       "node_modules/@gotgenes/pi-subagents/src/index.ts",
       "node_modules/@howaboua/pi-codex-conversion/src/index.ts",
-      "pi-extensions/rtk/index.ts",
       "node_modules/@teelicht/pi-grepai/src/extension/index.ts",
       "node_modules/pi-sensitive-guard/index.ts",
       "node_modules/@agney/pi-honcho-memory/extensions/index.ts",
@@ -24,9 +23,7 @@
       "pi-extensions/review/index.ts",
       "pi-extensions/search/index.ts"
     ],
-    "skills": [
-      "./skills"
-    ]
+    "skills": []
   },
   "scripts": {
     "format": "bunx prettier --write ."

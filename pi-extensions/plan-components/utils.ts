@@ -89,6 +89,24 @@ export function buildPlanFilePath(cwd: string, title: string): string {
   return path.join(dir, `${slug ? `${slug}-` : ""}${timestamp}-plan.yaml`);
 }
 
+export function buildHandoffDir(cwd: string): string {
+  return path.join(cwd, ".pi", "handoffs");
+}
+
+/**
+ * Stable path for a handoff copy of a plan, keyed by slug only (no
+ * timestamp). Re-handing off the same plan overwrites the file.
+ */
+export function buildHandoffPath(cwd: string, title: string): string {
+  const dir = buildHandoffDir(cwd);
+  const slug = title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 60);
+  return path.join(dir, `${slug || "plan"}.yaml`);
+}
+
 /** Save a plan as YAML to .pi/plans/ */
 export async function savePlanToFile(
   cwd: string,

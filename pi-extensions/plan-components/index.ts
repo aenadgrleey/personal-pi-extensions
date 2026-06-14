@@ -9,6 +9,8 @@
  * The UI is split across two native pi surfaces:
  *   - renderCall  → full plan body rendered as an inline chat item (scrolls naturally)
  *   - showPlanPreview → ctx.ui.select() for the four choices (compact, no fight)
+ *   - "📤 Hand off" action → copies the plan to a stable .pi/handoffs/<slug>.yaml,
+ *     copies a pickup prompt to the clipboard, and emits `plan` interaction event.
  *
  * Usage from another extension:
  *   import { showPlanPreview } from "../plan-components/index.js";
@@ -21,6 +23,7 @@
 import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
 import type { Theme } from "@mariozechner/pi-coding-agent";
 import { getInteractionBridge } from "../interaction-components/bridge.js";
+import { emitInteraction } from "../interaction-components/notify.js";
 import {
   Container,
   Spacer,
@@ -28,17 +31,30 @@ import {
   truncateToWidth,
   visibleWidth,
 } from "../deps.js";
+import { copyToClipboard, createHandoffFile } from "./handoff.js";
+import {
+  filterMessagesBeforeHandoff,
+  findLastHandoffIndex,
+  HANDOFF_MARKER,
+} from "./handoff.js";
 import { buildPlanText, savePlanToFile, type PlanPhase } from "./utils.js";
 
 // Re-export models and utilities for consumers
 export type { PlanPhase, PlanFile } from "./utils.js";
 export {
+  buildHandoffDir,
+  buildHandoffPath,
   loadPlanFile,
   buildPlanFilePath,
   buildPlanSaveDir,
   buildPlanText,
   savePlanToFile,
 } from "./utils.js";
+export {
+  HANDOFF_MARKER,
+  filterMessagesBeforeHandoff,
+  findLastHandoffIndex,
+} from "./handoff.js";
 
 // ── Constants ────────────────────────────────────────────────────────────
 
@@ -52,11 +68,18 @@ function formatResultLabel(icon: string, text: string, gap = 3): string {
 const SELECT_LABELS = [
   "✅  Accept plan",
   "💾  Save for later",
+  "📤  Hand off",
   "✏️   Refine plan",
   "🗑️   Discard",
 ] as const;
 
-const SELECT_ACTIONS = ["accepted", "saved", "refined", "discarded"] as const;
+const SELECT_ACTIONS = [
+  "accepted",
+  "saved",
+  "handed_off",
+  "refined",
+  "discarded",
+] as const;
 
 // ── Types ────────────────────────────────────────────────────────────────
 
@@ -66,18 +89,27 @@ export interface PlanPreviewParams {
   context?: string;
 }
 
+export type PlanAction =
+  | "accepted"
+  | "saved"
+  | "handed_off"
+  | "refined"
+  | "discarded";
+
 export interface PlanPreviewResult {
-  action: "accepted" | "saved" | "refined" | "discarded";
+  action: PlanAction;
   title: string;
   phases: PlanPhase[];
   phaseNames: string[];
   planPath: string;
   planText: string;
+  handoffPath?: string;
+  pickupPrompt?: string;
   feedback?: string;
 }
 
 export interface PlanDecisionResult {
-  action: "accepted" | "saved" | "refined" | "discarded";
+  action: PlanAction;
   feedback?: string;
   cancelled?: boolean;
 }
@@ -131,6 +163,11 @@ export async function showPlanPreview(
   const { title, phases } = params;
   const planText = buildPlanText(title, phases);
   const phaseNames = phases.map((p) => p.name);
+  emitInteraction({
+    kind: "plan",
+    summary: title,
+    timestamp: new Date().toISOString(),
+  });
   const bridge = getInteractionBridge();
   const decision = bridge
     ? await bridge.presentPlanDecision(ctx, params)
@@ -138,10 +175,28 @@ export async function showPlanPreview(
   if (decision.action === "discarded" && !decision.cancelled) {
     setTimeout(() => ctx.abort(), 0);
   }
-  const filePath =
-    decision.action === "accepted" || decision.action === "saved"
-      ? await savePlanToFile(ctx.cwd, title, phases)
-      : "";
+  const writesPlan =
+    decision.action === "accepted" ||
+    decision.action === "saved" ||
+    decision.action === "handed_off";
+  const filePath = writesPlan
+    ? await savePlanToFile(ctx.cwd, title, phases)
+    : "";
+
+  let handoffPath: string | undefined;
+  let pickupPrompt: string | undefined;
+  if (decision.action === "handed_off" && filePath) {
+    try {
+      const handoff = await createHandoffFile(ctx.cwd, filePath);
+      handoffPath = handoff.handoffPath;
+      pickupPrompt = handoff.pickupPrompt;
+      // Best-effort clipboard copy; non-fatal on failure.
+      void copyToClipboard(handoff.pickupPrompt);
+    } catch (err) {
+      console.error("[plan] handoff failed:", err);
+    }
+  }
+
   return {
     ...decision,
     title,
@@ -149,6 +204,8 @@ export async function showPlanPreview(
     phaseNames,
     planPath: filePath,
     planText,
+    handoffPath,
+    pickupPrompt,
   };
 }
 
@@ -224,6 +281,14 @@ export const planPreviewTool = {
           return `Plan accepted. Saved to: ${result.planPath}\nPhases: ${result.phaseNames.join(", ")}`;
         case "saved":
           return `Plan saved for later: ${result.planPath}`;
+        case "handed_off":
+          return [
+            `Plan handed off.`,
+            `Plan: ${result.planPath}`,
+            `Handoff: ${result.handoffPath ?? "(copy failed)"}`,
+            `Pickup prompt copied to clipboard.`,
+            `Next turn starts with a clean context scope (the pi.on("context") filter drops everything before the <plan-handoff> marker).`,
+          ].join("\n");
         case "refined":
           return result.feedback
             ? `User requested refinements:\n\n${result.feedback}\n\nPlease revise the plan based on this feedback and call plan_preview again.`
@@ -325,6 +390,13 @@ export const planPreviewTool = {
       case "saved":
         return new Text(
           formatResultLabel("💾", "Saved") + theme.fg("dim", details.planPath),
+          0,
+          0,
+        );
+      case "handed_off":
+        return new Text(
+          formatResultLabel("📤", "Handed off", 1) +
+            theme.fg("dim", ` ${details.handoffPath ?? details.planPath}`),
           0,
           0,
         );

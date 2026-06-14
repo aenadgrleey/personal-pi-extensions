@@ -4,6 +4,10 @@
  * Exposes plan components as a registered pi extension:
  *   - `plan_preview` tool — LLM can present phased plans for user review
  *   - `/plan` command — list and inspect saved plans
+ *   - Handoff: the "📤 Hand off" action in `plan_preview` queues a
+ *     `<plan-handoff>` pickup prompt for after the current turn and a
+ *     `pi.on("context")` filter cuts the LLM-facing message history at
+ *     that marker. Full history stays on disk for /resume / tree nav.
  *
  * Library functions and types are re-exported from plan-components
  * for use by other extensions.
@@ -12,6 +16,7 @@
 import path from "node:path";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import {
+  filterMessagesBeforeHandoff,
   buildPlanSaveDir,
   buildPlanText,
   loadPlanFile,
@@ -48,8 +53,59 @@ async function listPlanFiles(cwd: string): Promise<string[]> {
 // ── Extension ────────────────────────────────────────────────────────────
 
 export default function (pi: ExtensionAPI) {
-  // Register plan_preview tool
-  pi.registerTool(planPreviewTool);
+  // Wrap plan_preview so we can react to the "Hand off" action: after the
+  // tool returns, send the pickup prompt as a real user message (same
+  // session, no compaction) and notify the UI. Closes over `pi` because
+  // tool execute() only receives `ctx`, not the ExtensionAPI.
+  const wrappedPlanTool = {
+    ...planPreviewTool,
+    async execute(
+      toolCallId: string,
+      params: Parameters<typeof planPreviewTool.execute>[1],
+      signal: Parameters<typeof planPreviewTool.execute>[2],
+      onUpdate: Parameters<typeof planPreviewTool.execute>[3],
+      ctx: Parameters<typeof planPreviewTool.execute>[4],
+    ) {
+      const result = await planPreviewTool.execute(
+        toolCallId,
+        params,
+        signal,
+        onUpdate,
+        ctx,
+      );
+      const details = result.details as
+        | { action?: string; pickupPrompt?: string; handoffPath?: string }
+        | undefined;
+      if (details?.action === "handed_off" && details.pickupPrompt) {
+        ctx.ui.notify(
+          "📤 Plan handed off — pickup prompt queued. Next turn starts with a clean context scope.",
+          "info",
+        );
+        // `followUp` queues the pickup prompt for after the current turn
+        // ends, so the plan_preview result stays intact in this turn and
+        // the prompt arrives as the first user input of the next one. The
+        // pi.on("context") filter (below) cuts everything before the
+        // <plan-handoff> marker from what the LLM actually sees.
+        await pi.sendUserMessage(details.pickupPrompt, {
+          deliverAs: "followUp",
+        });
+      }
+      return result;
+    },
+  };
+
+  pi.registerTool(wrappedPlanTool);
+
+  // Context cut at the last <plan-handoff> marker. The pickup prompt
+  // queued by the wrapped plan_preview tool (above) carries that tag;
+  // when the next turn starts, this handler drops every message that
+  // appeared before the latest marker so the LLM sees a clean scope.
+  // The full history remains on disk and is unaffected for /resume.
+  pi.on("context", async (event) => {
+    const filtered = filterMessagesBeforeHandoff(event.messages);
+    if (filtered.length === event.messages.length) return;
+    return { messages: filtered };
+  });
 
   // Register /plan command
   pi.registerCommand("plan", {

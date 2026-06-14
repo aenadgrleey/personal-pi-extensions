@@ -25,16 +25,16 @@ Skills may live in `personal-context-files` or this repo's `skills/` package. Re
 ### TypeScript Extensions
 
 - `pi-extensions/ask/` — interactive question/answer UI tool
-- `pi-extensions/plan/` — phased plan review/save flow
+- `pi-extensions/plan/` — phased plan review/save flow. The `plan_preview` tool selector offers **Accept / Save / Hand off / Refine / Discard**; the “📤 Hand off” action copies the plan YAML to `.pi/handoffs/<slug>.yaml`, copies a pickup prompt to the clipboard, and queues it as a follow-up user message via `pi.sendUserMessage({ deliverAs: “followUp” })`. A `pi.on(“context”)` filter in the same extension drops every message that appeared before the latest `<plan-handoff>` marker from what the LLM actually sees, while the full history stays on disk for `/resume` and tree navigation. Same session, no compaction, no new session file.
 - `pi-extensions/review/` — keep/revise decision review flow
-- `pi-extensions/interaction-components/` — shared interaction contract, hub, and local provider
+- `pi-extensions/interaction-components/` — shared interaction contract, hub, local provider, and a pub/sub event hook (`addInteractionListener` / `emitInteraction`) fired by the three shared entry points in plan/ask/review for both bridge and local-fallback paths
 - `pi-extensions/indicators.ts` — footer/status indicator customization
 - `pi-extensions/system-context/index.ts` — optional system-prompt injector for active model notes (not loaded by default)
-- `pi-extensions/notify.ts` — desktop notification helper and commands
+- `pi-extensions/notify.ts` — desktop notification helper and commands (fires on `agent_end`)
+- `pi-extensions/interaction-notifier.ts` — desktop notifications for ask / plan / review interaction events (macOS `osascript`, per-kind sounds, per-kind toggle via `/notif-config [ask|plan|review]`)
 - `pi-extensions/check.ts` — auto-runs tsc + biome + eslint after agent completes work
 - `pi-extensions/auto-update/index.ts` — checks for pi updates on startup and updates in the background
 - `node_modules/@gotgenes/pi-subagents/src/index.ts` — re-exported sub-agent orchestration extension
-- `node_modules/@howaboua/pi-codex-conversion/src/index.ts` — re-exported Codex-oriented tool and prompt adapter
 - `node_modules/@teelicht/pi-grepai/src/extension/index.ts` — re-exported GrepAI CLI bridge tools and commands
 
 ## Working Rules

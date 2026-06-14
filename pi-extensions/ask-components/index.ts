@@ -14,6 +14,7 @@
 import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
 import type { Theme } from "@mariozechner/pi-coding-agent";
 import { getInteractionBridge } from "../interaction-components/bridge.js";
+import { emitInteraction } from "../interaction-components/notify.js";
 import { Container, Spacer, Text } from "../deps.js";
 
 // ── Types ────────────────────────────────────────────────────────────────
@@ -193,6 +194,11 @@ export async function showAskPrompt(
   questions: Question[],
   signal?: AbortSignal,
 ): Promise<AskResult> {
+  emitInteraction({
+    kind: "ask",
+    summary: questions[0]?.question ?? "(no question)",
+    timestamp: new Date().toISOString(),
+  });
   const bridge = getInteractionBridge();
   if (bridge) return bridge.presentAsk(ctx, questions);
   return showLocalAskPrompt(ctx, questions, signal);

@@ -1,5 +1,6 @@
 import type { ExtensionContext, Theme } from "@mariozechner/pi-coding-agent";
 import { getInteractionBridge } from "../interaction-components/bridge.js";
+import { emitInteraction } from "../interaction-components/notify.js";
 import { Container, Spacer, Text } from "../deps.js";
 
 export interface ChainReviewResult {
@@ -82,6 +83,11 @@ export async function showReviewPrompt(
   params: ReviewPromptParams,
 ): Promise<ReviewPromptResult | undefined> {
   const bridge = getInteractionBridge();
+  emitInteraction({
+    kind: "review",
+    summary: params.decision,
+    timestamp: new Date().toISOString(),
+  });
   if (bridge) {
     const result = await bridge.presentReview(ctx, params);
     return result ? makeResult(params, result) : undefined;

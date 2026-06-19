@@ -10,6 +10,7 @@
       "pi-extensions/ask/index.ts",
       "pi-extensions/auto-update/index.ts",
       "pi-extensions/check.ts",
+      "pi-extensions/clear-input/index.ts",
       "pi-extensions/codex-swap/index.ts",
       "node_modules/@gotgenes/pi-subagents/src/index.ts",
       "pi-extensions/subagents-toggle.ts",

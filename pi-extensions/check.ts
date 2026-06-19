@@ -265,6 +265,18 @@ function checksPassed(details: CheckDetails | undefined): boolean {
   return details?.results.every((r) => r.passed) ?? false;
 }
 
+function agentWasAborted(messages: unknown[]): boolean {
+  return messages.some(
+    (message) =>
+      typeof message === "object" &&
+      message !== null &&
+      "role" in message &&
+      message.role === "assistant" &&
+      "stopReason" in message &&
+      message.stopReason === "aborted",
+  );
+}
+
 function normalizeCommand(command: string): string {
   let normalized = command.trim().replace(/\s+/g, " ");
   normalized = normalized.replace(/^(?:[A-Za-z_][A-Za-z0-9_]*=\S+\s+)+/, "");
@@ -303,24 +315,54 @@ export default function (pi: ExtensionAPI) {
   let running = false;
   let hadFileChanges = false;
 
-  // Track whether any file-mutating tools were called during agent work
-  const mutatingTools = new Set(["write", "edit"]);
+  // Track whether any file-mutating tools were called during agent work.
+  // Codex adapter tools that can mutate files:
+  // - apply_patch edits files directly.
+  // - exec_command can run arbitrary shell commands.
+  // - write_stdin can drive a running shell/process that mutates files.
+  // - image_generation writes generated outputs under .pi/openai-codex-images/.
+  const mutatingTools = new Set([
+    "write",
+    "edit",
+    "apply_patch",
+    "image_generation",
+  ]);
+
+  function shellCommandFromToolInput(
+    toolName: string,
+    input: Record<string, unknown> | undefined,
+  ): string | undefined {
+    if (toolName === "bash") {
+      return typeof input?.command === "string" ? input.command : undefined;
+    }
+    if (toolName === "exec_command") {
+      return typeof input?.cmd === "string" ? input.cmd : undefined;
+    }
+    return undefined;
+  }
 
   pi.on("tool_call", (event) => {
     if (mutatingTools.has(event.toolName)) {
       hadFileChanges = true;
     }
-    if (event.toolName === "bash" && event.input?.command) {
+
+    const command = shellCommandFromToolInput(event.toolName, event.input);
+    if (command) {
+      hadFileChanges = true;
+    }
+
+    if (
+      event.toolName === "write_stdin" &&
+      typeof event.input?.chars === "string" &&
+      event.input.chars.length > 0
+    ) {
       hadFileChanges = true;
     }
   });
 
   pi.on("tool_result", (event, ctx) => {
-    if (event.toolName !== "bash" || event.isError) return;
-    const command =
-      typeof event.input?.command === "string"
-        ? event.input.command
-        : undefined;
+    if (event.isError) return;
+    const command = shellCommandFromToolInput(event.toolName, event.input);
     if (command && isKnownCheckCommand(ctx.cwd, command)) {
       hadFileChanges = false;
     }
@@ -484,8 +526,12 @@ export default function (pi: ExtensionAPI) {
 
   // Auto-check after agent finishes — only if files were changed.
   // Successful auto-checks are intentionally quiet; failures notify and trigger the agent.
-  pi.on("agent_end", async (_event, ctx) => {
+  pi.on("agent_end", async (event, ctx) => {
     if (running || !hadFileChanges) return;
+    if (agentWasAborted(event.messages)) {
+      hadFileChanges = false;
+      return;
+    }
     running = true;
 
     try {

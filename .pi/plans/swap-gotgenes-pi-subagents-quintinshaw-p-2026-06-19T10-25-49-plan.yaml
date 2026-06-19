@@ -1,0 +1,53 @@
+title: Swap @gotgenes/pi-subagents → @quintinshaw/pi-dynamic-workflows
+saved: "2026-06-19T10:25:49.688Z"
+phases:
+  - name: Commit check.ts improvements (unrelated noise)
+    steps:
+      - git add pi-extensions/check.ts
+      - >-
+        git commit: feat(check): treat apply_patch/exec_command/write_stdin/image_generation as mutating; skip
+        auto-check on aborted runs
+  - name: Install swap packages
+    steps:
+      - npm install @quintinshaw/pi-dynamic-workflows --save
+      - npm uninstall @gotgenes/pi-subagents
+      - Verify node_modules/@quintinshaw/pi-dynamic-workflows/extensions/workflow.ts exists
+  - name: Update package.json extensions list
+    steps:
+      - >-
+        Replace node_modules/@gotgenes/pi-subagents/src/index.ts with
+        node_modules/@quintinshaw/pi-dynamic-workflows/extensions/workflow.ts in pi.extensions
+      - Remove the pi-extensions/subagents-toggle.ts entry from pi.extensions
+  - name: Update docs (README.md + AGENTS.md)
+    steps:
+      - 'README.md: drop the "disabled by default / /subagents toggle" line; describe the workflow extension instead'
+      - "AGENTS.md: replace the @gotgenes/pi-subagents line with @quintinshaw/pi-dynamic-workflows line"
+  - name: Delete subagents-toggle.ts
+    steps:
+      - rm pi-extensions/subagents-toggle.ts (untracked, no git rm needed)
+  - name: Rewrite .pi/skills/subagent-orchestration/SKILL.md
+    steps:
+      - >-
+        New content: frontmatter description mentioning 'save context (intermediate in script variables, not chat)' +
+        'user explicit ask'; When to use / When NOT to use; mental model (vm sandbox,
+        agent/parallel/phase/pipeline/tier/agentType/isolation/schema); minimal example; commands cheat-sheet; storage
+        at ~/.pi/workflows/; anti-patterns
+      - Mirror to skills/subagent-orchestration/SKILL.md (gitignored, plain deployment, same bytes)
+  - name: Update rtango config (drift protection)
+    steps:
+      - ".rtango/spec.yaml: add on_target_modified: skip override to the subagent-orchestration rule (only this rule)"
+      - >-
+        .rtango/lock.yaml: recompute content_hash for both deployments (plain + pi) — either `rtango sync` or sha256 of
+        new files
+  - name: Verify
+    steps:
+      - bun run check (or npm test) — tsc + biome + eslint via the check extension
+      - >-
+        Final grep: no orphan references to subagent/get_subagent_result/steer_subagent/@gotgenes/pi-subagents outside
+        the swap commit itself
+  - name: Commit the swap
+    steps:
+      - git add package.json README.md AGENTS.md .rtango/spec.yaml .rtango/lock.yaml (SKILL.md files are gitignored)
+      - >-
+        git commit: feat(extensions): swap @gotgenes/pi-subagents for @quintinshaw/pi-dynamic-workflows; drop
+        subagents-toggle; rewrite subagent-orchestration skill for workflow tool

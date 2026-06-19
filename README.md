@@ -12,7 +12,7 @@ Read [`.rtango/spec.yaml`](./.rtango/spec.yaml) for the managed skills inventory
 - checks in repository-root `checks.yaml` (with `.pi/checks.yaml` compatibility) and agent config in `.pi/`
 - reusable skills and workflows generated into gitignored `skills/` by rtango from `personal-context-files` and curated upstream collections
 - shared interaction components for interactive extension flows
-- a re-exported `@gotgenes/pi-subagents` sub-agent orchestration extension
+- a re-exported `@quintinshaw/pi-dynamic-workflows` extension that turns one prompt into a fleet of subagents fanning out in parallel via a JS orchestration script in a `vm` sandbox (`agent()`/`parallel()`/`phase()`), with journaled resume, git-worktree isolation, real token / cost accounting, an interactive `/workflows` TUI, and `/deep-research` / `/adversarial-review` / `/ultracode` commands. Auto-triggers on the keyword `workflow`; toggle with `/workflows-trigger on|off`
 - a re-exported `@howaboua/pi-codex-conversion` Codex tool/prompt adapter
 - an RTK/Codex bridge that rewrites Codex `exec_command` calls through `rtk rewrite` while leaving the Codex terminal implementation intact
 - a re-exported `@teelicht/pi-grepai` GrepAI CLI bridge

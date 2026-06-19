@@ -33,9 +33,8 @@ Skills may live in `personal-context-files` or this repo's `skills/` package. Re
 - `pi-extensions/notify.ts` — desktop notification helper and commands (fires on `agent_end`)
 - `pi-extensions/interaction-notifier.ts` — desktop notifications for ask / plan / review interaction events (macOS `osascript`, per-kind sounds, per-kind toggle via `/notif-config [ask|plan|review]`)
 - `pi-extensions/check.ts` — auto-runs tsc + biome + eslint after agent completes work
-- `pi-extensions/clear-input/` — `Cmd+Shift+R` (`ctrl+shift+r` in pi notation) wipes the prompt editor via `ctx.ui.setEditorText("")`; also registers `/clear-input` as a slash-command fallback. Sits next to the built-in `app.clear` (`ctrl+c`) without rebinding it.
 - `pi-extensions/auto-update/index.ts` — checks for pi updates on startup and updates in the background
-- `node_modules/@gotgenes/pi-subagents/src/index.ts` — re-exported sub-agent orchestration extension
+- `node_modules/@quintinshaw/pi-dynamic-workflows/extensions/workflow.ts` — re-exported dynamic-workflows extension (vm-sandboxed JS scripts that fan out to many subagents via `agent()`/`parallel()`/`phase()`; journaled resume, worktree isolation, `/workflows` TUI; see `.pi/skills/subagent-orchestration/SKILL.md` for usage)
 - `node_modules/@teelicht/pi-grepai/src/extension/index.ts` — re-exported GrepAI CLI bridge tools and commands
 
 ## Working Rules

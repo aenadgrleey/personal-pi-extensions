@@ -29,7 +29,7 @@ deployments:
       path: skills/subagent-orchestration
     source_hash: "70c4fa90f7b286ad9a7ab362ada892befbf28ff96efc2d5a513cb0e498f1575f"
     content: skills/subagent-orchestration/SKILL.md
-    content_hash: "74ffcb3880ce37f64c946698755731c65187c8e8afa0dee67f725a3efd945bbb"
+    content_hash: "f0103def18856f2a4dc346e13ed5cad89960011b77f7ba8c82b63975482f3b61"
   - rule_id: subagent-orchestration
     agent: pi
     source:
@@ -38,7 +38,7 @@ deployments:
       path: skills/subagent-orchestration
     source_hash: "70c4fa90f7b286ad9a7ab362ada892befbf28ff96efc2d5a513cb0e498f1575f"
     content: ".pi/skills/subagent-orchestration/SKILL.md"
-    content_hash: "74ffcb3880ce37f64c946698755731c65187c8e8afa0dee67f725a3efd945bbb"
+    content_hash: "f0103def18856f2a4dc346e13ed5cad89960011b77f7ba8c82b63975482f3b61"
   - rule_id: extract-procedures-into-skills
     agent: plain
     source:

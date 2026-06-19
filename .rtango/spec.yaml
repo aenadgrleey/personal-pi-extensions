@@ -19,6 +19,13 @@ rules:
       ref: "002c7a94a5e39208f2db6c3c99b3db36e28545f6"
       path: skills/subagent-orchestration
     schema_agent: pi
+    # Local rewrite for the @quintinshaw/pi-dynamic-workflows swap. Upstream
+    # copy in personal-context-files still teaches the old parent-orchestrated
+    # subagent roles; the local copy is what the runtime actually loads. Skip
+    # the default 'fail' on local modification so the local content survives
+    # the next `rtango sync`. When the upstream is updated, sync will leave
+    # this rule alone and a manual update is required.
+    on_target_modified: skip
     kind: skill
   - id: extract-procedures-into-skills
     source:

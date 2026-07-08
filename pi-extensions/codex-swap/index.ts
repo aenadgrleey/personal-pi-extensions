@@ -57,6 +57,7 @@ const GLOBAL_PREFERRED_FILE = path.join(AGENT_DIR, "codex-swap.local.json");
 const BACKUPS_DIR = path.join(os.homedir(), ".pi", "backups");
 const CODEX_USAGE_URL = "https://chatgpt.com/backend-api/wham/usage";
 const USAGE_TIMEOUT_MS = 8000;
+const OPENAI_CODEX_PROVIDER = "openai-codex";
 
 type CodexUsageWindow = {
   label: string;
@@ -98,15 +99,27 @@ function writeJson(file: string, data: unknown): void {
 
 export function getOpenAICodexFromAuth(): OAuthCred | null {
   const auth = readJson<Record<string, unknown>>(AUTH_FILE);
-  const entry = auth?.["openai-codex"] as OAuthCred | undefined;
+  const entry = auth?.[OPENAI_CODEX_PROVIDER] as OAuthCred | undefined;
   if (!entry || entry.type !== "oauth") return null;
   return entry;
 }
 
 function updateOpenAICodexInAuth(oauth: OAuthCred): void {
   const auth = readJson<Record<string, unknown>>(AUTH_FILE) ?? {};
-  auth["openai-codex"] = oauth;
+  auth[OPENAI_CODEX_PROVIDER] = oauth;
   writeJson(AUTH_FILE, auth);
+}
+
+function forceRefreshIfAccessMissing(oauth: OAuthCred): OAuthCred {
+  if (oauth.access || oauth.key || !oauth.refresh) return oauth;
+  return { ...oauth, expires: 0 };
+}
+
+function isOAuthExpired(oauth: OAuthCred): boolean {
+  if (typeof oauth.expires !== "number" || !Number.isFinite(oauth.expires)) {
+    return true;
+  }
+  return Date.now() >= oauth.expires;
 }
 
 function applyOpenAICodexOAuth(
@@ -114,36 +127,71 @@ function applyOpenAICodexOAuth(
   ctx: ExtensionContext,
   oauth: OAuthCred,
 ): void {
-  const cred: OAuthCred = { ...oauth, type: "oauth" };
+  const cred: OAuthCred = forceRefreshIfAccessMissing({
+    ...oauth,
+    type: "oauth",
+  });
   updateOpenAICodexInAuth(cred);
   ctx.modelRegistry.authStorage.reload();
   pi.events.emit("codexswap:account-changed", undefined);
 }
 
+type ActiveOAuthResult = { oauth: OAuthCred; expired: boolean };
+
 async function refreshAndGetActiveOAuth(
   ctx: ExtensionContext,
-): Promise<OAuthCred | null> {
+): Promise<ActiveOAuthResult | null> {
   const storage = ctx?.modelRegistry?.authStorage;
   if (storage) {
+    let refreshThrew = false;
     try {
+      if (
+        typeof storage.get === "function" &&
+        typeof storage.set === "function"
+      ) {
+        const cred = storage.get(OPENAI_CODEX_PROVIDER) as
+          OAuthCred | undefined;
+        if (
+          cred?.type === "oauth" &&
+          !cred.access &&
+          !cred.key &&
+          cred.refresh
+        ) {
+          // `cred.refresh` was just verified truthy above, but the local
+          // OAuthCred type keeps it optional. Cast to AuthCredential so the
+          // required `refresh: string` field is satisfied.
+          storage.set(
+            OPENAI_CODEX_PROVIDER,
+            forceRefreshIfAccessMissing(cred) as unknown as Parameters<
+              typeof storage.set
+            >[1],
+          );
+        }
+      }
+
       if (typeof storage.getApiKey === "function") {
-        await storage.getApiKey("openai-codex");
+        await storage.getApiKey(OPENAI_CODEX_PROVIDER);
       }
     } catch {
-      // Ignore refresh errors; we'll still attempt to read current credential.
+      refreshThrew = true;
     }
 
     try {
       if (typeof storage.get === "function") {
-        const cred = storage.get("openai-codex") as OAuthCred | undefined;
-        if (cred?.type === "oauth") return cred;
+        const cred = storage.get(OPENAI_CODEX_PROVIDER) as
+          OAuthCred | undefined;
+        if (cred?.type === "oauth") {
+          return { oauth: cred, expired: refreshThrew || isOAuthExpired(cred) };
+        }
       }
     } catch {
       // ignore
     }
   }
 
-  return getOpenAICodexFromAuth();
+  const fallback = getOpenAICodexFromAuth();
+  if (!fallback) return null;
+  return { oauth: fallback, expired: isOAuthExpired(fallback) };
 }
 
 function formatWindowLabel(seconds?: number): string {
@@ -392,8 +440,7 @@ function inferEmail(oauth: OAuthCred): string | undefined {
   const payload = decodeJwtPayload(oauth.access);
   if (!payload) return undefined;
   const profile = payload["https://api.openai.com/profile"] as
-    | Record<string, unknown>
-    | undefined;
+    Record<string, unknown> | undefined;
   const email = profile?.email ?? payload.email;
   return typeof email === "string" ? email : undefined;
 }
@@ -719,11 +766,77 @@ async function configurePreferredProfile(
   );
 }
 
-function maybeApplyPreferredProfile(
+function syncStoreProfileFromOAuth(store: StoreV2, oauth: OAuthCred): void {
+  const profile =
+    findByRefresh(store.profiles, oauth.refresh) ??
+    (store.activeProfileId
+      ? store.profiles.find((p) => p.id === store.activeProfileId)
+      : undefined);
+  if (!profile) return;
+
+  profile.oauth = oauth;
+  profile.savedAt = Date.now();
+  profile.email = inferEmail(oauth) ?? profile.email;
+  profile.accountId =
+    typeof oauth.accountId === "string" ? oauth.accountId : profile.accountId;
+  store.activeProfileId = profile.id;
+}
+
+async function refreshActiveOAuthAndSyncStore(
+  ctx: ExtensionContext,
+  store: StoreV2,
+): Promise<OAuthCred | null> {
+  const result = await refreshAndGetActiveOAuth(ctx);
+  if (!result) return null;
+
+  if (result.expired) {
+    // Refresh failed (or threw) - the returned credential is unusable.
+    // Drop any saved profile whose refresh token matches so we don't
+    // preserve an expired session in the store. Without this the stale
+    // credential would otherwise be written back to the profile by the
+    // sync branch below.
+    const expiredRefresh = result.oauth.refresh;
+    const dropped = store.profiles.filter(
+      (p) =>
+        typeof p.oauth.refresh === "string" &&
+        typeof expiredRefresh === "string" &&
+        p.oauth.refresh === expiredRefresh,
+    );
+    if (dropped.length) {
+      const droppedIds = new Set(dropped.map((p) => p.id));
+      store.profiles = store.profiles.filter((p) => !droppedIds.has(p.id));
+      if (store.activeProfileId && droppedIds.has(store.activeProfileId)) {
+        const liveAfter = findByRefresh(store.profiles, result.oauth.refresh);
+        store.activeProfileId = liveAfter?.id ?? store.profiles[0]?.id;
+      }
+      if (store.lastProfileId && droppedIds.has(store.lastProfileId)) {
+        store.lastProfileId = undefined;
+      }
+      saveStore(store);
+      ctx.ui.notify(
+        [
+          `Dropped ${dropped.length} expired Codex profile(s):`,
+          ...dropped.map((p) => `- ${p.label} (${shortWho(p)})`),
+          "Re-login with /login openai-codex then /codexswap add.",
+        ].join("\n"),
+        "warning",
+      );
+    }
+    return result.oauth;
+  }
+
+  if (result.oauth) {
+    syncStoreProfileFromOAuth(store, result.oauth);
+    saveStore(store);
+  }
+  return result.oauth;
+}
+
+async function maybeApplyPreferredProfile(
   pi: ExtensionAPI,
   ctx: ExtensionContext,
   store: StoreV2,
-): { applied: boolean; configured: boolean } {
+): Promise<{ applied: boolean; configured: boolean }> {
   const configured = getPreferredConfig(ctx.cwd);
   if (!configured) return { applied: false, configured: false };
 
@@ -749,7 +862,7 @@ function maybeApplyPreferredProfile(
   store.lastProfileId = current?.id;
   applyOpenAICodexOAuth(pi, ctx, target.oauth);
   store.activeProfileId = target.id;
-  saveStore(store);
+  await refreshActiveOAuthAndSyncStore(ctx, store);
   ctx.ui.notify(
     `Applied ${configured.scope} preferred Codex account: ${target.label}`,
     "info",
@@ -815,7 +928,10 @@ export default function codexSwapExtension(pi: ExtensionAPI) {
     if (!live) return;
 
     const store = ensureBootstrapped(loadStore());
-    const preferred = maybeApplyPreferredProfile(pi, ctx, store);
+    const preferred = await maybeApplyPreferredProfile(pi, ctx, store);
+    if (!preferred.applied) {
+      await refreshActiveOAuthAndSyncStore(ctx, store);
+    }
     if (!preferred.configured && store.profiles.length >= 2) {
       await configurePreferredProfile(ctx, store, { startup: true });
     }
@@ -902,7 +1018,7 @@ export default function codexSwapExtension(pi: ExtensionAPI) {
         store.activeProfileId = target.id;
         saveStore(store);
 
-        const activeOauth = await refreshAndGetActiveOAuth(ctx);
+        const activeOauth = await refreshActiveOAuthAndSyncStore(ctx, store);
         const usage = activeOauth
           ? await fetchCodexUsageSnapshot(activeOauth)
           : { windows: [], error: "auth unavailable" };
@@ -930,7 +1046,7 @@ export default function codexSwapExtension(pi: ExtensionAPI) {
         store.lastProfileId = currentId;
         saveStore(store);
 
-        const activeOauth = await refreshAndGetActiveOAuth(ctx);
+        const activeOauth = await refreshActiveOAuthAndSyncStore(ctx, store);
         const usage = activeOauth
           ? await fetchCodexUsageSnapshot(activeOauth)
           : { windows: [], error: "auth unavailable" };
@@ -942,9 +1058,9 @@ export default function codexSwapExtension(pi: ExtensionAPI) {
       }
 
       if (sub === "status" || sub === "list") {
-        const activeOauth = await refreshAndGetActiveOAuth(ctx);
-        const usage = activeOauth
-          ? await fetchCodexUsageSnapshot(activeOauth)
+        const activeResult = await refreshAndGetActiveOAuth(ctx);
+        const usage = activeResult
+          ? await fetchCodexUsageSnapshot(activeResult.oauth)
           : { windows: [], error: "auth unavailable" };
         const usageByProfile = await usageForProfiles(store.profiles);
         const lines = store.profiles.map((p, i) => {
@@ -1009,9 +1125,9 @@ export default function codexSwapExtension(pi: ExtensionAPI) {
           return;
         }
 
-        const activeOauth = await refreshAndGetActiveOAuth(ctx);
-        const usage = activeOauth
-          ? await fetchCodexUsageSnapshot(activeOauth)
+        const activeResult = await refreshAndGetActiveOAuth(ctx);
+        const usage = activeResult
+          ? await fetchCodexUsageSnapshot(activeResult.oauth)
           : { windows: [], error: "auth unavailable" };
         ctx.ui.notify(usageSummary(usage), "info");
         return;
@@ -1053,6 +1169,9 @@ export default function codexSwapExtension(pi: ExtensionAPI) {
         applyOpenAICodexOAuth(pi, ctx, best.profile.oauth);
         store.activeProfileId = best.profile.id;
         saveStore(store);
+        // Refresh + sync so an expired best profile is dropped instead of
+        // being preserved in the store with a stale credential.
+        await refreshActiveOAuthAndSyncStore(ctx, store);
         ctx.ui.notify(
           [
             `Switched openai-codex → ${best.profile.label} (${shortWho(best.profile)}) - lowest primary usage.`,
@@ -1220,7 +1339,7 @@ export default function codexSwapExtension(pi: ExtensionAPI) {
         store.activeProfileId = target.id;
         saveStore(store);
 
-        const activeOauth = await refreshAndGetActiveOAuth(ctx);
+        const activeOauth = await refreshActiveOAuthAndSyncStore(ctx, store);
         const usage = activeOauth
           ? await fetchCodexUsageSnapshot(activeOauth)
           : { windows: [], error: "auth unavailable" };

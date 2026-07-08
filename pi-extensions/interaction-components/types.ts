@@ -1,31 +1,11 @@
-import type {
-  BridgeAskAnswer,
-  BridgeAskQuestion,
-  BridgePlanDecisionResult,
-  BridgePlanPreviewParams,
-  BridgeReviewPromptParams,
-  BridgeReviewPromptResult,
-} from "./bridge.js";
+import type { BridgeAskAnswer, BridgeAskQuestion } from "./bridge.js";
 
 export interface AskInteraction {
   kind: "ask";
   questions: BridgeAskQuestion[];
 }
 
-export interface PlanInteraction {
-  kind: "plan";
-  params: BridgePlanPreviewParams;
-}
-
-export interface ReviewInteraction {
-  kind: "review";
-  params: BridgeReviewPromptParams;
-}
-
-export type SharedInteraction =
-  | AskInteraction
-  | PlanInteraction
-  | ReviewInteraction;
+export type SharedInteraction = AskInteraction;
 
 export interface PendingInteractionRecord {
   id: string;
@@ -51,6 +31,4 @@ export interface PersistedPendingInteraction {
 
 export interface SharedInteractionResults {
   ask: { answers: BridgeAskAnswer[]; cancelled: boolean };
-  plan: BridgePlanDecisionResult;
-  review: BridgeReviewPromptResult | undefined;
 }

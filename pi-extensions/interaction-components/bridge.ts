@@ -26,34 +26,6 @@ export interface BridgeAskResult {
   cancelled: boolean;
 }
 
-export interface BridgePlanPhase {
-  name: string;
-  steps: string[];
-}
-
-export interface BridgePlanPreviewParams {
-  title: string;
-  phases: BridgePlanPhase[];
-  context?: string;
-}
-
-export interface BridgePlanDecisionResult {
-  action: "accepted" | "saved" | "refined" | "discarded";
-  feedback?: string;
-  cancelled?: boolean;
-}
-
-export interface BridgeReviewPromptParams {
-  decision: string;
-  summary: string;
-  context?: string;
-}
-
-export interface BridgeReviewPromptResult {
-  decision: "continue" | "redefine";
-  feedback?: string;
-}
-
 export interface BridgeNotification {
   title: string;
   body: string;
@@ -64,19 +36,11 @@ export interface InteractionBridge {
     ctx: ExtensionContext,
     questions: BridgeAskQuestion[],
   ): Promise<BridgeAskResult>;
-  presentPlanDecision(
-    ctx: ExtensionContext,
-    params: BridgePlanPreviewParams,
-  ): Promise<BridgePlanDecisionResult>;
-  presentReview(
-    ctx: ExtensionContext,
-    params: BridgeReviewPromptParams,
-  ): Promise<BridgeReviewPromptResult | undefined>;
   notifyCompletion(notification: BridgeNotification): Promise<void>;
 }
 
 // Pi loads extensions through jiti, which gives each extension its own module cache.
-// Store the active bridge on globalThis so ask/plan/review tools in separate extensions
+// Store the active bridge on globalThis so interaction-aware extensions
 // can still see the Telegram-owned bridge instance.
 const BRIDGE_GLOBAL_KEY = "__personalAiToolsInteractionBridge__";
 

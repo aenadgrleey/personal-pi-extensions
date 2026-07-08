@@ -2,18 +2,16 @@
  * Interaction event hook
  *
  * Lightweight pub/sub for "an interaction is about to be presented to the
- * user" events. The three shared entry points (`showPlanPreview` in
- * plan-components, `showAskPrompt` in ask-components, `showReviewPrompt`
- * in review-components) call `emitInteraction` at the start — covering
- * both the bridge path and the local-fallback path in one call site per
- * kind.
+ * user" events. The shared ask entry point (`showAskPrompt` in
+ * ask-components) calls `emitInteraction` at the start — covering both the
+ * bridge path and the local-fallback path.
  *
  * The store lives on `globalThis` so listeners registered by any
  * extension (regardless of module load order) see the same events.
  * `interaction-notifier` is the canonical consumer.
  */
 
-export type InteractionKind = "ask" | "plan" | "review";
+export type InteractionKind = "ask";
 
 export interface InteractionEvent {
   kind: InteractionKind;

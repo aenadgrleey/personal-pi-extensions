@@ -25,13 +25,11 @@ Skills may live in `personal-context-files` or this repo's `skills/` package. Re
 ### TypeScript Extensions
 
 - `pi-extensions/ask/` — interactive question/answer UI tool
-- `pi-extensions/plan/` — phased plan review/save flow. The `plan_preview` tool selector offers **Accept / Save / Hand off / Refine / Discard**; the “📤 Hand off” action copies the plan YAML to `.pi/handoffs/<slug>.yaml`, copies a pickup prompt to the clipboard, and queues it as a follow-up user message via `pi.sendUserMessage({ deliverAs: “followUp” })`. A `pi.on(“context”)` filter in the same extension drops every message that appeared before the latest `<plan-handoff>` marker from what the LLM actually sees, while the full history stays on disk for `/resume` and tree navigation. Same session, no compaction, no new session file.
-- `pi-extensions/review/` — keep/revise decision review flow
-- `pi-extensions/interaction-components/` — shared interaction contract, hub, local provider, and a pub/sub event hook (`addInteractionListener` / `emitInteraction`) fired by the three shared entry points in plan/ask/review for both bridge and local-fallback paths
+- `pi-extensions/interaction-components/` — shared interaction contract, hub, local provider, and a pub/sub event hook (`addInteractionListener` / `emitInteraction`) fired by the ask entry point for both bridge and local-fallback paths
 - `pi-extensions/indicators.ts` — footer/status indicator customization
 - `pi-extensions/system-context/index.ts` — optional system-prompt injector for active model notes (not loaded by default)
 - `pi-extensions/notify.ts` — desktop notification helper and commands (fires on `agent_end`)
-- `pi-extensions/interaction-notifier.ts` — desktop notifications for ask / plan / review interaction events (macOS `osascript`, per-kind sounds, per-kind toggle via `/notif-config [ask|plan|review]`)
+- `pi-extensions/interaction-notifier.ts` — desktop notifications for ask interaction events (macOS `osascript`, toggle via `/notif-config [ask]`)
 - `pi-extensions/check.ts` — auto-runs tsc + biome + eslint after agent completes work
 - `pi-extensions/auto-update/index.ts` — checks for pi updates on startup and updates in the background
 - `node_modules/@quintinshaw/pi-dynamic-workflows/extensions/workflow.ts` — re-exported dynamic-workflows extension (vm-sandboxed JS scripts that fan out to many subagents via `agent()`/`parallel()`/`phase()`; journaled resume, worktree isolation, `/workflows` TUI; see `.pi/skills/subagent-orchestration/SKILL.md` for usage)

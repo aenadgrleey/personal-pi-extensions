@@ -1,0 +1,60 @@
+title: Handoff + interaction notifications
+saved: "2026-06-12T20:21:29.470Z"
+phases:
+  - name: Plan handoff action (in-session, no compaction)
+    steps:
+      - >-
+        Add `pi-extensions/plan-components/handoff.ts` with `createHandoffFile(cwd, sourcePlanPath, title)` (copies plan
+        YAML to `.pi/handoffs/<slug>.yaml`, returns `{ handoffPath, pickupPrompt }`) and `copyToClipboard(text)` (macOS
+        `pbcopy` with console fallback).
+      - >-
+        Extend `pi-extensions/plan-components/utils.ts` with `buildHandoffPath(cwd, title)` returning
+        `.pi/handoffs/<slug>.yaml` (stable slug, no timestamp, overwrites).
+      - >-
+        In `pi-extensions/plan-components/index.ts`: add "📤  Hand off" to `SELECT_LABELS` and `"handed_off"` to
+        `SELECT_ACTIONS`; extend `PlanDecisionResult` / `PlanPreviewResult` with `handoffPath` + `pickupPrompt`; in
+        `showPlanPreview`, include `"handed_off"` in the save condition, then call `createHandoffFile` +
+        `copyToClipboard` when chosen.
+      - >-
+        Update the tool's `execute` switch to return a handoff message, and `renderResult` to render the new action
+        (icon 📤, label "Handed off", dim: handoff path).
+      - >-
+        In `pi-extensions/plan/index.ts`, wrap `planPreviewTool` to close over `pi`: if `result.action ===
+        "handed_off"`, after the tool returns, call `pi.sendUserMessage({ content: result.pickupPrompt })` and
+        `ctx.ui.notify("Plan handed off — pickup prompt sent.")`. No new commands, no compaction.
+  - name: Interaction event hook
+    steps:
+      - >-
+        Add `pi-extensions/interaction-components/notify.ts` with a module-level `Set<InteractionListener>` on
+        `globalThis`. Export `addInteractionListener(fn) → unsubscribe` and `emitInteraction(event)` where `event = {
+        kind: 'ask' | 'plan' | 'review', summary: string, timestamp: string }`.
+      - >-
+        In `pi-extensions/interaction-components/hub.ts`: in each `present*` method, call `emitInteraction({ kind,
+        summary, timestamp })` at the start. Summaries: plan → `params.title`, ask → `questions[0]?.question ?? '(no
+        question)'`, review → `params.decision`.
+      - >-
+        In each local-fallback entry point, emit the same event at the start: `showLocalPlanDecision` (plan),
+        `showLocalAskPrompt` in `ask-components` (ask), `showLocalReviewPrompt` in `review-components` (review).
+      - Re-export `addInteractionListener` / `emitInteraction` from `pi-extensions/interaction-components/index.ts`.
+  - name: interaction-notifier extension
+    steps:
+      - >-
+        New `pi-extensions/interaction-notifier.ts`. `osascriptNotify(title, body, sound?)` helper modeled on
+        `notify.ts` (5s timeout, returns boolean).
+      - >-
+        Config: `{ enabled: true, kinds: { ask: true, plan: true, review: true }, sounds: { ask: 'Glass', plan:
+        'Submarine', review: 'Purr' } }`. Listener: skip if disabled or kind off; build title (e.g. "❓ Agent asks"),
+        truncate body to 80 chars, call `osascriptNotify`.
+      - >-
+        Lifecycle: `pi.on('session_start')` subscribes via `addInteractionListener`; `session_shutdown` unsubscribes.
+        Commands: `/notif-config` (toggle master) and `/notif-config ask|plan|review` (toggle per kind).
+      - "`pi-extensions/notify.ts` (agent_end) stays unchanged."
+  - name: Validation + docs
+    steps:
+      - Run `bun run check` — fix any tsc / biome / eslint issues.
+      - >-
+        Update `AGENTS.md` TypeScript Extensions inventory: add `interaction-notifier`; note new handoff action in
+        `plan-components` description.
+      - >-
+        Add brief header docstrings to `pi-extensions/plan-components/handoff.ts` and
+        `pi-extensions/interaction-components/notify.ts` describing the contract.

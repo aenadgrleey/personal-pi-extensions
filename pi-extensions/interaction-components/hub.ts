@@ -3,10 +3,6 @@ import type {
   BridgeAskQuestion,
   BridgeAskResult,
   BridgeNotification,
-  BridgePlanDecisionResult,
-  BridgePlanPreviewParams,
-  BridgeReviewPromptParams,
-  BridgeReviewPromptResult,
   InteractionBridge,
 } from "./bridge.js";
 import type {
@@ -59,15 +55,6 @@ function isProviderCancellation(
         "cancelled" in value &&
         value.cancelled === true,
       );
-    case "plan":
-      return Boolean(
-        value &&
-        typeof value === "object" &&
-        "cancelled" in value &&
-        value.cancelled === true,
-      );
-    case "review":
-      return value === undefined;
   }
 }
 
@@ -148,8 +135,7 @@ export class InteractionHub implements InteractionBridge {
     resolution: InteractionResolution<T>,
   ): void {
     const pending = this.pending.get(interactionId) as
-      | PendingRuntime<T>
-      | undefined;
+      PendingRuntime<T> | undefined;
     if (!pending || pending.settled) return;
     if (isProviderCancellation(pending.record.interaction, resolution.value)) {
       pending.cancelledProviderIds.add(resolution.providerId);
@@ -165,26 +151,6 @@ export class InteractionHub implements InteractionBridge {
     questions: BridgeAskQuestion[],
   ): Promise<BridgeAskResult> {
     return this.present<BridgeAskResult>(ctx, { kind: "ask", questions });
-  }
-
-  async presentPlanDecision(
-    ctx: ExtensionContext,
-    params: BridgePlanPreviewParams,
-  ): Promise<BridgePlanDecisionResult> {
-    return this.present<BridgePlanDecisionResult>(ctx, {
-      kind: "plan",
-      params,
-    });
-  }
-
-  async presentReview(
-    ctx: ExtensionContext,
-    params: BridgeReviewPromptParams,
-  ): Promise<BridgeReviewPromptResult | undefined> {
-    return this.present<BridgeReviewPromptResult | undefined>(ctx, {
-      kind: "review",
-      params,
-    });
   }
 
   async notifyCompletion(notification: BridgeNotification): Promise<void> {

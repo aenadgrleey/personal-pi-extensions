@@ -2,20 +2,19 @@
  * Interaction Notifier Extension
  *
  * Sends macOS desktop notifications (via `osascript`) when the agent is
- * about to present an ask / plan / review to the user. Subscribes to the
+ * about to present an ask prompt to the user. Subscribes to the
  * pub/sub event hook in `pi-extensions/interaction-components/notify.ts`,
- * which is fired by the three shared entry points (plan-components,
- * ask-components, review-components) — covering both the bridge path
- * and the local-fallback path in one call site per kind.
+ * which is fired by ask-components — covering both the bridge path and the
+ * local-fallback path.
  *
  * Config:
  *   - enabled: master toggle
- *   - kinds: per-kind toggle (ask / plan / review)
+ *   - kinds: per-kind toggle (ask)
  *   - sounds: per-kind macOS sound name
  *
  * Commands:
  *   - /notif-config           → toggle master enabled
- *   - /notif-config ask|plan|review → toggle that kind
+ *   - /notif-config ask       → toggle ask notifications
  *
  * Independent of `notify.ts` (which fires on agent_end). Both can run
  * side by side.
@@ -38,12 +37,10 @@ interface NotifierConfig {
 
 const DEFAULT_CONFIG: NotifierConfig = {
   enabled: true,
-  kinds: { ask: true, plan: true, review: true },
-  sounds: { ask: "Glass", plan: "Submarine", review: "Purr" },
+  kinds: { ask: true },
+  sounds: { ask: "Glass" },
   titles: {
     ask: "❓ Agent asks",
-    plan: "📋 Plan proposed",
-    review: "🔄 Decision needed",
   },
 };
 
@@ -105,8 +102,7 @@ export default function (pi: ExtensionAPI) {
   }
 
   pi.registerCommand("notif-config", {
-    description:
-      "Toggle interaction notifications. Usage: /notif-config [ask|plan|review]",
+    description: "Toggle interaction notifications. Usage: /notif-config [ask]",
     handler: async (args: string, ctx) => {
       const arg = args.trim().split(/\s+/)[0]?.toLowerCase() ?? "";
       if (!arg) {
@@ -123,10 +119,7 @@ export default function (pi: ExtensionAPI) {
         );
         return;
       }
-      ctx.ui.notify(
-        `Unknown kind "${arg}". Use: /notif-config [ask|plan|review]`,
-        "error",
-      );
+      ctx.ui.notify(`Unknown kind "${arg}". Use: /notif-config [ask]`, "error");
     },
   });
 }

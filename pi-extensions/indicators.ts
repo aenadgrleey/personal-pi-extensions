@@ -196,8 +196,7 @@ export default function (pi: ExtensionAPI) {
 
     const payload = decodeJwtPayload(credential.access);
     const profile = payload?.["https://api.openai.com/profile"] as
-      | Record<string, unknown>
-      | undefined;
+      Record<string, unknown> | undefined;
     const email = profile?.email ?? payload?.email;
     if (typeof email === "string" && email.trim()) return email;
 

@@ -4,11 +4,7 @@ import { join } from "node:path";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 
 type ToolName =
-  | "grepsearch"
-  | "websearch"
-  | "codesearch"
-  | "context7"
-  | "web_fetch";
+  "grepsearch" | "websearch" | "codesearch" | "context7" | "web_fetch";
 
 interface SearchConfig {
   disabledTools?: ToolName[];

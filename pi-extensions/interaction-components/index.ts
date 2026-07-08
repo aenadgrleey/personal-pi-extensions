@@ -11,11 +11,6 @@ export type {
   BridgeAskQuestion,
   BridgeAskResult,
   BridgeNotification,
-  BridgePlanDecisionResult,
-  BridgePlanPhase,
-  BridgePlanPreviewParams,
-  BridgeReviewPromptParams,
-  BridgeReviewPromptResult,
   InteractionBridge,
 } from "./bridge.js";
 
@@ -30,8 +25,6 @@ export type {
   InteractionResolution,
   PendingInteractionRecord,
   PersistedPendingInteraction,
-  PlanInteraction,
-  ReviewInteraction,
   SharedInteraction,
   SharedInteractionResults,
 } from "./types.js";

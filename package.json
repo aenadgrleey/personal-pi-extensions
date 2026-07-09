@@ -13,6 +13,7 @@
       "pi-extensions/clear-input/index.ts",
       "pi-extensions/codex-swap/index.ts",
       "node_modules/@diegopetrucci/pi-openai-fast/index.ts",
+      "node_modules/pi-cursor-sdk/src/index.ts",
       "node_modules/@quintinshaw/pi-dynamic-workflows/extensions/workflow.ts",
       "node_modules/@howaboua/pi-codex-conversion/src/index.ts",
       "node_modules/@teelicht/pi-grepai/src/extension/index.ts",
@@ -42,11 +43,13 @@
     "@sinclair/typebox": "npm:typebox@^1.1.38",
     "@teelicht/pi-grepai": "^0.1.1",
     "js-yaml": "^4.1.0",
+    "pi-cursor-sdk": "^0.1.56",
     "pi-sensitive-guard": "0.4.2",
     "typebox": "^1.1.38"
   },
   "bundledDependencies": [
-    "@diegopetrucci/pi-openai-fast"
+    "@diegopetrucci/pi-openai-fast",
+    "pi-cursor-sdk"
   ],
   "trustedDependencies": [
     "tree-sitter-bash"

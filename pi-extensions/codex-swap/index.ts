@@ -3,6 +3,7 @@ import type {
   ExtensionCommandContext,
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
+import { AuthStorage } from "@earendil-works/pi-coding-agent";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -22,6 +23,7 @@ type Profile = {
   id: string;
   label: string;
   savedAt: number;
+  lastUsedAt?: number;
   email?: string;
   accountId?: string;
   oauth: OAuthCred;
@@ -192,6 +194,43 @@ async function refreshAndGetActiveOAuth(
   const fallback = getOpenAICodexFromAuth();
   if (!fallback) return null;
   return { oauth: fallback, expired: isOAuthExpired(fallback) };
+}
+
+async function refreshOAuthInIsolatedStorage(
+  oauth: OAuthCred,
+): Promise<ActiveOAuthResult> {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-codexswap-"));
+  const tmpAuthFile = path.join(tmpDir, "auth.json");
+
+  try {
+    writeJson(tmpAuthFile, {
+      [OPENAI_CODEX_PROVIDER]: forceRefreshIfAccessMissing({
+        ...oauth,
+        type: "oauth",
+      }),
+    });
+
+    const storage = AuthStorage.create(tmpAuthFile);
+    let refreshThrew = false;
+    try {
+      await storage.getApiKey(OPENAI_CODEX_PROVIDER);
+    } catch {
+      refreshThrew = true;
+    }
+
+    const refreshed = storage.get(OPENAI_CODEX_PROVIDER) as
+      OAuthCred | undefined;
+    if (refreshed?.type === "oauth") {
+      return {
+        oauth: refreshed,
+        expired: refreshThrew || isOAuthExpired(refreshed),
+      };
+    }
+
+    return { oauth, expired: true };
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
 }
 
 function formatWindowLabel(seconds?: number): string {
@@ -381,15 +420,30 @@ function usageSummary(snapshot: CodexUsageSnapshot): string {
   return usageStatusLines(snapshot).join("\n");
 }
 
+async function usageForProfile(profile: Profile): Promise<CodexUsageSnapshot> {
+  let refresh = await refreshProfileOAuth(profile);
+  if (refresh.expired) return { windows: [], error: "auth expired" };
+
+  let usage = await fetchCodexUsageSnapshot(refresh.oauth);
+  if (usage.error !== "auth expired") return usage;
+
+  profile.oauth = { ...profile.oauth, expires: 0 };
+  refresh = await refreshProfileOAuth(profile);
+  if (refresh.expired) return usage;
+  usage = await fetchCodexUsageSnapshot(refresh.oauth);
+  return usage;
+}
+
 async function usageForProfiles(
-  profiles: Profile[],
+  store: StoreV2,
+  options?: { save?: boolean },
 ): Promise<Array<{ profile: Profile; usage: CodexUsageSnapshot }>> {
-  return Promise.all(
-    profiles.map(async (profile) => ({
-      profile,
-      usage: await fetchCodexUsageSnapshot(profile.oauth),
-    })),
-  );
+  const result: Array<{ profile: Profile; usage: CodexUsageSnapshot }> = [];
+  for (const profile of store.profiles) {
+    result.push({ profile, usage: await usageForProfile(profile) });
+  }
+  if (options?.save !== false) saveStore(store);
+  return result;
 }
 
 function primaryUsage(snapshot: CodexUsageSnapshot): number | undefined {
@@ -446,15 +500,41 @@ function inferEmail(oauth: OAuthCred): string | undefined {
 }
 
 function profileFromOauth(oauth: OAuthCred, label: string): Profile {
+  const now = Date.now();
   return {
     id: `p_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
     label,
-    savedAt: Date.now(),
+    savedAt: now,
+    lastUsedAt: now,
     email: inferEmail(oauth),
     accountId:
       typeof oauth.accountId === "string" ? oauth.accountId : undefined,
     oauth,
   };
+}
+
+function updateProfileFromOAuth(profile: Profile, oauth: OAuthCred): void {
+  profile.oauth = oauth;
+  profile.savedAt = Date.now();
+  profile.email = inferEmail(oauth) ?? profile.email;
+  profile.accountId =
+    typeof oauth.accountId === "string" ? oauth.accountId : profile.accountId;
+}
+
+async function refreshProfileOAuth(
+  profile: Profile,
+): Promise<ActiveOAuthResult> {
+  if (!profile.oauth.refresh) return { oauth: profile.oauth, expired: true };
+  if (
+    !isOAuthExpired(profile.oauth) &&
+    (profile.oauth.access || profile.oauth.key)
+  ) {
+    return { oauth: profile.oauth, expired: false };
+  }
+
+  const result = await refreshOAuthInIsolatedStorage(profile.oauth);
+  if (!result.expired) updateProfileFromOAuth(profile, result.oauth);
+  return result;
 }
 
 function sanitizeLabel(label: string): string {
@@ -497,6 +577,75 @@ function findByRefresh(
   return profiles.find((p) => p.oauth.refresh === refresh);
 }
 
+function compactStore(store: StoreV2): StoreV2 {
+  const score = (profile: Profile): number => {
+    const selected =
+      profile.id === store.activeProfileId ? 4_000_000_000_000 : 0;
+    const previous = profile.id === store.lastProfileId ? 2_000_000_000_000 : 0;
+    return selected + previous + (profile.lastUsedAt ?? profile.savedAt ?? 0);
+  };
+
+  const profiles: Profile[] = [];
+  const byRefresh = new Map<string, Profile>();
+
+  for (const profile of store.profiles) {
+    if (profile.oauth?.type !== "oauth" || !profile.oauth.refresh) continue;
+
+    profile.label = sanitizeLabel(profile.label) || "profile";
+    profile.savedAt = profile.savedAt || Date.now();
+    profile.email = profile.email ?? inferEmail(profile.oauth);
+    profile.accountId =
+      profile.accountId ??
+      (typeof profile.oauth.accountId === "string"
+        ? profile.oauth.accountId
+        : undefined);
+
+    const existing = byRefresh.get(profile.oauth.refresh);
+    if (!existing) {
+      byRefresh.set(profile.oauth.refresh, profile);
+      profiles.push(profile);
+      continue;
+    }
+
+    if (score(profile) > score(existing)) {
+      const index = profiles.indexOf(existing);
+      if (index >= 0) profiles[index] = profile;
+      byRefresh.set(profile.oauth.refresh, profile);
+    }
+  }
+
+  const labels = new Set<string>();
+  for (const profile of profiles) {
+    let label = profile.label;
+    let i = 2;
+    while (labels.has(label.toLowerCase())) {
+      label = `${profile.label} ${i}`;
+      i++;
+    }
+    profile.label = label;
+    labels.add(label.toLowerCase());
+  }
+
+  store.profiles = profiles;
+  if (
+    store.activeProfileId &&
+    !profiles.some((profile) => profile.id === store.activeProfileId)
+  ) {
+    store.activeProfileId = profiles[0]?.id;
+  }
+  if (
+    store.lastProfileId &&
+    !profiles.some((profile) => profile.id === store.lastProfileId)
+  ) {
+    store.lastProfileId = undefined;
+  }
+  if (store.lastProfileId === store.activeProfileId) {
+    store.lastProfileId = undefined;
+  }
+
+  return store;
+}
+
 function latestCodexBackupOauth(): OAuthCred | null {
   try {
     if (!fs.existsSync(BACKUPS_DIR)) return null;
@@ -527,6 +676,7 @@ function migrateLegacyStore(legacy: LegacyStore): StoreV2 {
       id: `legacy_${name}`,
       label: sanitizeLabel(slot.label || name) || name,
       savedAt: slot.savedAt || Date.now(),
+      lastUsedAt: slot.savedAt,
       email: slot.email,
       accountId: slot.accountId,
       oauth: slot.oauth,
@@ -542,7 +692,7 @@ function migrateLegacyStore(legacy: LegacyStore): StoreV2 {
     activeProfileId = found?.id;
   }
 
-  return { version: 2, activeProfileId, profiles };
+  return compactStore({ version: 2, activeProfileId, profiles });
 }
 
 function loadStore(): StoreV2 {
@@ -556,12 +706,12 @@ function loadStore(): StoreV2 {
     Array.isArray((raw as StoreV2).profiles)
   ) {
     const s = raw as StoreV2;
-    return {
+    return compactStore({
       version: 2,
       activeProfileId: s.activeProfileId,
       lastProfileId: s.lastProfileId,
       profiles: s.profiles,
-    };
+    });
   }
 
   if (raw && (raw as LegacyStore).version === 1 && (raw as LegacyStore).slots) {
@@ -577,31 +727,23 @@ function saveStore(store: StoreV2): void {
 
 function ensureBootstrapped(store: StoreV2): StoreV2 {
   const live = getOpenAICodexFromAuth();
-  if (!live) return store;
+  if (!live) return compactStore(store);
 
   let liveProfile = findByRefresh(store.profiles, live.refresh);
   if (!liveProfile) {
     const label = defaultLabelFor(live, store.profiles);
     liveProfile = profileFromOauth(live, label);
     store.profiles.push(liveProfile);
+  } else {
+    updateProfileFromOAuth(liveProfile, live);
   }
+  liveProfile.lastUsedAt = Date.now();
 
   if (!store.activeProfileId) {
     store.activeProfileId = liveProfile.id;
   }
 
-  if (store.profiles.length < 2) {
-    const backup = latestCodexBackupOauth();
-    if (backup?.refresh && !findByRefresh(store.profiles, backup.refresh)) {
-      const label = ensureUniqueLabel(
-        store.profiles,
-        inferEmail(backup)?.split("@")[0] || "backup",
-      );
-      store.profiles.push(profileFromOauth(backup, label));
-    }
-  }
-
-  return store;
+  return compactStore(store);
 }
 
 function getProjectPreferredFile(cwd: string): string {
@@ -697,6 +839,44 @@ function shortWho(profile: Profile): string {
 
 function preferredProfileLabel(profile: Profile): string {
   return `${profile.label} - ${shortWho(profile)}`;
+}
+
+function removeProfiles(store: StoreV2, profiles: Profile[]): void {
+  const removedIds = new Set(profiles.map((profile) => profile.id));
+  store.profiles = store.profiles.filter(
+    (profile) => !removedIds.has(profile.id),
+  );
+  if (store.activeProfileId && removedIds.has(store.activeProfileId)) {
+    store.activeProfileId = store.profiles[0]?.id;
+  }
+  if (store.lastProfileId && removedIds.has(store.lastProfileId)) {
+    store.lastProfileId = undefined;
+  }
+  compactStore(store);
+}
+
+async function prepareProfileForSwitch(
+  ctx: ExtensionContext,
+  store: StoreV2,
+  profile: Profile,
+): Promise<boolean> {
+  const result = await refreshProfileOAuth(profile);
+  if (!result.expired) {
+    profile.lastUsedAt = Date.now();
+    saveStore(store);
+    return true;
+  }
+
+  removeProfiles(store, [profile]);
+  saveStore(store);
+  ctx.ui.notify(
+    [
+      `Dropped expired Codex profile before switching: ${profile.label} (${shortWho(profile)})`,
+      "Re-login with /login openai-codex then /codexswap add.",
+    ].join("\n"),
+    "warning",
+  );
+  return false;
 }
 
 async function configurePreferredProfile(
@@ -858,6 +1038,9 @@ async function maybeApplyPreferredProfile(
     saveStore(store);
     return { applied: false, configured: true };
   }
+  if (!(await prepareProfileForSwitch(ctx, store, target))) {
+    return { applied: false, configured: true };
+  }
 
   store.lastProfileId = current?.id;
   applyOpenAICodexOAuth(pi, ctx, target.oauth);
@@ -880,6 +1063,7 @@ function helpText(): string {
     "  /codexswap best            Switch to saved account with lowest primary usage",
     "  /codexswap low             Show profiles sorted by lowest live usage",
     "  /codexswap purge [dry-run] Purge saved profiles whose auth is expired",
+    "  /codexswap import-backup    Import latest openai-codex backup explicitly",
     "  /codexswap who             Show live account from auth.json",
     "  /codexswap add [label]     Save currently logged-in account",
     "  /codexswap use <label|#>   Switch to a saved account",
@@ -1012,6 +1196,7 @@ export default function codexSwapExtension(pi: ExtensionAPI) {
           ctx.ui.notify("Could not resolve next Codex profile.", "error");
           return;
         }
+        if (!(await prepareProfileForSwitch(ctx, store, target))) return;
 
         store.lastProfileId = currentId;
         applyOpenAICodexOAuth(pi, ctx, target.oauth);
@@ -1040,6 +1225,7 @@ export default function codexSwapExtension(pi: ExtensionAPI) {
           ctx.ui.notify("No previous Codex profile recorded yet.", "warning");
           return;
         }
+        if (!(await prepareProfileForSwitch(ctx, store, target))) return;
 
         applyOpenAICodexOAuth(pi, ctx, target.oauth);
         store.activeProfileId = target.id;
@@ -1062,7 +1248,7 @@ export default function codexSwapExtension(pi: ExtensionAPI) {
         const usage = activeResult
           ? await fetchCodexUsageSnapshot(activeResult.oauth)
           : { windows: [], error: "auth unavailable" };
-        const usageByProfile = await usageForProfiles(store.profiles);
+        const usageByProfile = await usageForProfiles(store);
         const lines = store.profiles.map((p, i) => {
           const active = p.id === store.activeProfileId ? "*" : " ";
           const liveMark =
@@ -1097,7 +1283,7 @@ export default function codexSwapExtension(pi: ExtensionAPI) {
 
       if (sub === "usage" || sub === "quota") {
         if (rest === "all" || rest === "*") {
-          const all = await usageForProfiles(store.profiles);
+          const all = await usageForProfiles(store);
           ctx.ui.notify(
             all
               .map(({ profile, usage }, i) =>
@@ -1115,7 +1301,8 @@ export default function codexSwapExtension(pi: ExtensionAPI) {
             ctx.ui.notify(`Profile not found: ${rest}`, "error");
             return;
           }
-          const usage = await fetchCodexUsageSnapshot(target.oauth);
+          const usage = await usageForProfile(target);
+          saveStore(store);
           ctx.ui.notify(
             [profileUsageLine(target, usage), "", usageSummary(usage)].join(
               "\n",
@@ -1140,7 +1327,7 @@ export default function codexSwapExtension(pi: ExtensionAPI) {
           return;
         }
 
-        const all = await usageForProfiles(store.profiles);
+        const all = await usageForProfiles(store);
         const usable = all
           .map((entry) => ({ ...entry, primary: primaryUsage(entry.usage) }))
           .filter(
@@ -1162,6 +1349,7 @@ export default function codexSwapExtension(pi: ExtensionAPI) {
           );
           return;
         }
+        if (!(await prepareProfileForSwitch(ctx, store, best.profile))) return;
 
         const currentId = liveProfile?.id ?? store.activeProfileId;
         if (currentId && currentId !== best.profile.id)
@@ -1188,7 +1376,7 @@ export default function codexSwapExtension(pi: ExtensionAPI) {
           return;
         }
 
-        const all = await usageForProfiles(store.profiles);
+        const all = await usageForProfiles(store);
         const sorted = all
           .map((entry) => ({
             ...entry,
@@ -1225,7 +1413,7 @@ export default function codexSwapExtension(pi: ExtensionAPI) {
           rest === "dry" ||
           rest === "--dry-run" ||
           rest === "check";
-        const all = await usageForProfiles(store.profiles);
+        const all = await usageForProfiles(store, { save: !dryRun });
         const expired = all
           .filter(({ usage }) => usage.error === "auth expired")
           .map(({ profile }) => profile);
@@ -1266,6 +1454,37 @@ export default function codexSwapExtension(pi: ExtensionAPI) {
         return;
       }
 
+      if (sub === "import-backup" || sub === "restore-backup") {
+        const backup = latestCodexBackupOauth();
+        if (!backup?.refresh) {
+          ctx.ui.notify("No openai-codex OAuth backup found.", "warning");
+          return;
+        }
+        const existing = findByRefresh(store.profiles, backup.refresh);
+        if (existing) {
+          updateProfileFromOAuth(existing, backup);
+          saveStore(store);
+          ctx.ui.notify(
+            `Updated backup profile: ${existing.label} (${shortWho(existing)})`,
+            "info",
+          );
+          return;
+        }
+
+        const label = ensureUniqueLabel(
+          store.profiles,
+          inferEmail(backup)?.split("@")[0] || "backup",
+        );
+        const profile = profileFromOauth(backup, label);
+        store.profiles.push(profile);
+        saveStore(store);
+        ctx.ui.notify(
+          `Imported backup profile: ${profile.label} (${shortWho(profile)})`,
+          "info",
+        );
+        return;
+      }
+
       if (sub === "who") {
         saveStore(store);
         showWho(ctx, live, store);
@@ -1293,6 +1512,7 @@ export default function codexSwapExtension(pi: ExtensionAPI) {
           existing.email = inferEmail(live);
           existing.accountId =
             typeof live.accountId === "string" ? live.accountId : undefined;
+          existing.lastUsedAt = Date.now();
           if (desired) {
             existing.label = ensureUniqueLabel(
               store.profiles,
@@ -1331,6 +1551,7 @@ export default function codexSwapExtension(pi: ExtensionAPI) {
           ctx.ui.notify(`Profile not found: ${selector || "(empty)"}`, "error");
           return;
         }
+        if (!(await prepareProfileForSwitch(ctx, store, target))) return;
 
         applyOpenAICodexOAuth(pi, ctx, target.oauth);
         if (store.activeProfileId && store.activeProfileId !== target.id) {

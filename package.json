@@ -12,13 +12,13 @@
       "pi-extensions/check.ts",
       "pi-extensions/clear-input/index.ts",
       "pi-extensions/codex-swap/index.ts",
-      "node_modules/@diegopetrucci/pi-openai-fast/index.ts",
+      "node_modules/@tunnckocore/pi-gpt-fast-mode/src/index.ts",
       "node_modules/pi-cursor-sdk/src/index.ts",
       "node_modules/@quintinshaw/pi-dynamic-workflows/extensions/workflow.ts",
       "node_modules/@howaboua/pi-codex-conversion/src/index.ts",
       "node_modules/@teelicht/pi-grepai/src/extension/index.ts",
       "node_modules/pi-sensitive-guard/index.ts",
-      "node_modules/@agney/pi-honcho-memory/extensions/index.ts",
+      "pi-extensions/honcho-memory/index.ts",
       "pi-extensions/indicators.ts",
       "pi-extensions/system-context/index.ts",
       "pi-extensions/notify.ts",
@@ -28,27 +28,30 @@
     "skills": []
   },
   "scripts": {
-    "format": "bunx prettier --write ."
+    "format": "bunx prettier --write .",
+    "format:check": "bunx prettier --check .",
+    "test:codex-swap": "bun test pi-extensions/codex-swap/*.test.ts",
+    "check": "bun run format:check && bun run test:codex-swap && bun build pi-extensions/check.ts --target=node --outfile=/tmp/pi-check-extension.js && bun build pi-extensions/codex-swap/index.ts --target=node --outfile=/tmp/pi-codex-swap-extension.js"
   },
   "dependencies": {
-    "@agney/pi-honcho-memory": "0.1.0",
-    "@diegopetrucci/pi-openai-fast": "^0.1.6",
     "@earendil-works/pi-agent-core": "^0.78.1",
     "@earendil-works/pi-coding-agent": "^0.78.1",
     "@earendil-works/pi-tui": "^0.78.1",
+    "@honcho-ai/sdk": "^2.2.0",
     "@howaboua/pi-codex-conversion": "^1.5.21",
     "@mariozechner/pi-ai": "npm:@earendil-works/pi-ai@^0.78.1",
     "@mariozechner/pi-coding-agent": "npm:@earendil-works/pi-coding-agent@^0.78.1",
-    "@quintinshaw/pi-dynamic-workflows": "^2.6.0",
+    "@quintinshaw/pi-dynamic-workflows": "^2.12.1",
     "@sinclair/typebox": "npm:typebox@^1.1.38",
     "@teelicht/pi-grepai": "^0.1.1",
     "js-yaml": "^4.1.0",
+    "@tunnckocore/pi-gpt-fast-mode": "^0.4.0",
     "pi-cursor-sdk": "^0.1.56",
     "pi-sensitive-guard": "0.4.2",
     "typebox": "^1.1.38"
   },
   "bundledDependencies": [
-    "@diegopetrucci/pi-openai-fast",
+    "@tunnckocore/pi-gpt-fast-mode",
     "pi-cursor-sdk"
   ],
   "trustedDependencies": [

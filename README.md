@@ -14,6 +14,7 @@ Read [`.rtango/spec.yaml`](./.rtango/spec.yaml) for the managed skills inventory
 - shared interaction components for interactive extension flows
 - a re-exported `@quintinshaw/pi-dynamic-workflows` extension that turns one prompt into a fleet of subagents fanning out in parallel via a JS orchestration script in a `vm` sandbox (`agent()`/`parallel()`/`phase()`), with journaled resume, git-worktree isolation, real token / cost accounting, an interactive `/workflows` TUI, and `/deep-research` / `/adversarial-review` / `/ultracode` commands. Auto-triggers on the keyword `workflow`; toggle with `/workflows-trigger on|off`
 - a re-exported `@howaboua/pi-codex-conversion` Codex tool/prompt adapter
+- a local `codex-swap` extension for switching Pi's saved ChatGPT/Codex OAuth accounts
 - an RTK/Codex bridge that rewrites Codex `exec_command` calls through `rtk rewrite` while leaving the Codex terminal implementation intact
 - a re-exported `@teelicht/pi-grepai` GrepAI CLI bridge
 
@@ -25,6 +26,58 @@ Keep responsibilities separate:
 - use `pi install` for Pi package assets (extensions and checks)
 - include `checks.yaml` in the setup plan when the target repo uses Pi; keep `.pi/checks.yaml` only when compatibility is needed
 - keep local Pi preferences/secrets as local setup, not exported content
+
+## Codex account switching
+
+`pi-extensions/codex-swap/index.ts` is loaded through this package manifest. It
+uses Pi's built-in OAuth provider; it does **not** register another provider or
+implement OAuth itself.
+
+1. Sign in through Pi: `/login openai-codex`.
+2. Explicitly save that fresh Pi login: `/codexswap add [label]`.
+3. Switch while the agent is idle with `/codexswap`, `/codexswap back`,
+   `/codexswap use <label|#>`, or `/codexswap best`.
+4. Inspect the active account with `/codexwho` or `/codexswap who`.
+
+`/codexswap status`, `usage [all|label|#]`, `low` (also `lowest`/`sort`),
+`purge`, `rm`, and `rename` remain available for account management. Commands
+and notifications never display OAuth credential material.
+
+Saved OAuth profiles live only in Pi's private global agent directory, in a
+locked `0600` file below `~/.pi/agent/codex-swap/`; its directory is `0700`.
+The extension uses Pi's public `AuthStorage` API for the live account and an
+isolated temporary `AuthStorage` instance to refresh inactive profiles.
+
+`/codexpref` manages global and, when Pi is inside a repository, repository
+preferences. The only repository-local setting is
+`<repository-root>/.pi/codex-swap/preferred-account-id`. It contains exactly
+one stable account ID followed by a newline—never an OAuth token, refresh token,
+profile JSON, label, or email. For example:
+
+```text
+# .pi/codex-swap/preferred-account-id
+acct_123
+```
+
+Repository discovery is filesystem-only and supports ordinary repositories and
+linked-worktree `.git` files. Symlinks, non-regular files, malformed gitfiles,
+oversized/multiline selectors, and unsafe preference paths are rejected. This
+is a deliberate trust boundary: a present but invalid, unavailable, unresolved,
+or ambiguous repository selector **blocks** global fallback. Only an absent
+repository selector permits the private global preference to apply.
+
+On an interactive, idle `session_start` with reason `startup`, the selected
+preference is attempted once. Any failure leaves Pi's active account unchanged.
+`/codexpref` reports the exact scope and path it wrote or cleared, while only
+persisting the selected account ID. The profile store remains private under
+`~/.pi/agent`; repository files never receive credentials.
+
+Malformed credentials, elapsed credentials that cannot refresh, and confirmed
+authentication rejections are removed rather than re-saved. A transient network
+or unexpected refresh failure preserves an otherwise unelapsed credential
+unchanged. Remote refresh and usage calls run outside the short profile-store
+critical section; refresh results are reconciled only when the captured profile
+snapshot is still current.
 
 ## Bootstrapping another repo
 
@@ -77,13 +130,14 @@ Before importing anything, inspect the target repository:
 
 ## Development tooling
 
-The check pipeline runs `bun run format` first so formatting is auto-fixed before the other verification steps.
+The check pipeline is non-mutating and validates formatting before deterministic
+Codex-swap tests and the two `/tmp` smoke builds.
 
 ```bash
 bun run tsc     # type check only
 bun run lint    # biome + eslint
 bun run format  # auto-fix formatting
-bun run check   # full pipeline (tsc → biome → eslint)
+bun run check   # non-mutating Codex-swap validation + smoke builds
 ```
 
 Package manager is **bun**. Use `bun install`, `bun add`, `bunx` — not npm/npx.

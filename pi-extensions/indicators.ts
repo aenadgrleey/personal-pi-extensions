@@ -4,7 +4,7 @@
  * Replaces token counters with a quota indicator.
  *
  * Sources:
- * - OpenAI/Codex: pi auth storage (`~/.pi/agent/auth.json`) + `https://chatgpt.com/backend-api/wham/usage`
+ * - OpenAI/Codex: Pi auth storage + `https://chatgpt.com/backend-api/wham/usage`
  * - GLM / z.ai: provider API key + z.ai quota API
  * - MiniMax Token Plan: provider API key + `https://www.minimax.io/v1/token_plan/remains`
  */
@@ -15,11 +15,7 @@ import type {
   ExtensionContext,
   SessionStartEvent,
 } from "@mariozechner/pi-coding-agent";
-import { getOpenAICodexFromAuth } from "./codex-swap/index.js";
 import { truncateToWidth, visibleWidth } from "./deps.js";
-import { readFileSync } from "node:fs";
-import { homedir } from "node:os";
-import { join } from "node:path";
 
 type FiveHourQuota = {
   usedPercent: number;
@@ -48,17 +44,6 @@ type PiCodexOAuthCredential = {
   account_id?: string;
 };
 
-type CodexSwapStore = {
-  profiles?: Array<{
-    label: string;
-    email?: string;
-    accountId?: string;
-    oauth?: {
-      refresh?: string;
-    };
-  }>;
-};
-
 type FooterTuiLike = {
   requestRender(): void;
 };
@@ -73,8 +58,6 @@ type FooterDataLike = {
   getExtensionStatuses(): ReadonlyMap<string, string>;
 };
 
-const AGENT_DIR = join(homedir(), ".pi", "agent");
-const CODEX_SWAP_STORE_FILE = join(AGENT_DIR, "codexswap.json");
 const FIVE_HOURS_MINUTES = 5 * 60;
 const QUOTA_REFRESH_MS = 5 * 60 * 1000;
 const COUNTDOWN_RENDER_MS = 30 * 1000;
@@ -183,17 +166,6 @@ export default function (pi: ExtensionAPI) {
   const inferCodexAccountLabel = (
     credential: PiCodexOAuthCredential,
   ): string | undefined => {
-    try {
-      const raw = readFileSync(CODEX_SWAP_STORE_FILE, "utf8");
-      const store = JSON.parse(raw) as CodexSwapStore;
-      const match = store.profiles?.find(
-        (profile) => profile.oauth?.refresh === credential.refresh,
-      );
-      if (match?.label) return match.label;
-    } catch {
-      // ignore store lookup errors and fall back to token/account info
-    }
-
     const payload = decodeJwtPayload(credential.access);
     const profile = payload?.["https://api.openai.com/profile"] as
       Record<string, unknown> | undefined;
@@ -205,11 +177,22 @@ export default function (pi: ExtensionAPI) {
   };
 
   const readCodexAuth = async (
-    _ctx: ExtensionContext,
+    ctx: ExtensionContext,
   ): Promise<CodexAuth | undefined> => {
-    const credential =
-      getOpenAICodexFromAuth() as PiCodexOAuthCredential | null;
-    if (credential?.type !== "oauth") return undefined;
+    const credential = ctx.modelRegistry.authStorage.get("openai-codex");
+    if (
+      !credential ||
+      credential.type !== "oauth" ||
+      (credential.access !== undefined &&
+        typeof credential.access !== "string") ||
+      (credential.key !== undefined && typeof credential.key !== "string") ||
+      (credential.accountId !== undefined &&
+        typeof credential.accountId !== "string") ||
+      (credential.account_id !== undefined &&
+        typeof credential.account_id !== "string")
+    ) {
+      return undefined;
+    }
 
     const accessToken = credential.access || credential.key || undefined;
     const accountId =
@@ -272,14 +255,12 @@ export default function (pi: ExtensionAPI) {
       },
     ];
 
-    if (
-      json.rate_limit?.secondary_window &&
-      typeof json.rate_limit.secondary_window.used_percent === "number"
-    ) {
-      const secondaryWindow = json.rate_limit.secondary_window;
+    const secondaryWindow = json.rate_limit?.secondary_window;
+    const secondaryUsedPercent = secondaryWindow?.used_percent;
+    if (secondaryWindow && typeof secondaryUsedPercent === "number") {
       windows.push({
         label: "7d",
-        usedPercent: clampPercent(secondaryWindow.used_percent),
+        usedPercent: clampPercent(secondaryUsedPercent),
         resetsAt:
           typeof secondaryWindow.reset_at === "number"
             ? secondaryWindow.reset_at > 10_000_000_000
@@ -661,14 +642,6 @@ export default function (pi: ExtensionAPI) {
       requestRender?.();
     }
   };
-
-  pi.events.on("codexswap:account-changed", () => {
-    if (!currentCtx?.hasUI) return;
-    quota = undefined;
-    currentCodexAccount = undefined;
-    requestRender?.();
-    void refreshQuota(currentCtx);
-  });
 
   pi.on(
     "session_start",

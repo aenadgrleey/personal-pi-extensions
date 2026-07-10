@@ -1,11 +1,11 @@
 node_modules/
 
 # >>> rtango managed targets >>>
-.pi/agents/planner.agent.md
-.pi/agents/reviewer.agent.md
-.pi/agents/scout.agent.md
-.pi/agents/summarizer.agent.md
-.pi/agents/worker.agent.md
+.pi/agents/planner.md
+.pi/agents/reviewer.md
+.pi/agents/scout.md
+.pi/agents/summarizer.md
+.pi/agents/worker.md
 .pi/skills/caveman/
 .pi/skills/commit/
 .pi/skills/extract-procedures-into-skills/

@@ -7,6 +7,20 @@ import { AuthStorage } from "@earendil-works/pi-coding-agent";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import {
+  clearRepositoryPreference,
+  discoverRepositoryRoot,
+  readRepositoryPreference,
+  repositoryPreferencePath,
+  resolvePreferredProfile,
+  writeRepositoryPreference,
+} from "./core.ts";
+import {
+  dedupeProfiles,
+  normalizeEmail,
+  redirectPreferenceSelector,
+} from "./profiles.ts";
+import { credentialDecision } from "./service.ts";
 
 type OAuthCred = {
   type: "oauth";
@@ -53,8 +67,8 @@ type LegacyStore = {
 };
 
 const AGENT_DIR = path.join(os.homedir(), ".pi", "agent");
-const AUTH_FILE = path.join(AGENT_DIR, "auth.json");
 const STORE_FILE = path.join(AGENT_DIR, "codexswap.json");
+const STORE_LOCK_FILE = `${STORE_FILE}.lock`;
 const GLOBAL_PREFERRED_FILE = path.join(AGENT_DIR, "codex-swap.local.json");
 const BACKUPS_DIR = path.join(os.homedir(), ".pi", "backups");
 const CODEX_USAGE_URL = "https://chatgpt.com/backend-api/wham/usage";
@@ -75,10 +89,17 @@ type CodexUsageSnapshot = {
 };
 
 type PreferredConfig = {
+  preferredAccountId?: string;
   preferredProfile?: string;
 };
 
-type PreferredScope = "global" | "project";
+type PreferredScope = "global" | "repository";
+
+// A loaded store is a snapshot. We only persist it while the on-disk snapshot
+// is unchanged, which prevents an async refresh from clobbering a concurrent
+// profile mutation. The lock is held solely for the compare-and-write section.
+const storeRevisions = new WeakMap<StoreV2, string>();
+const storeDedupeRedirects = new WeakMap<StoreV2, Map<string, Profile>>();
 
 function readJson<T>(file: string): T | null {
   try {
@@ -99,22 +120,45 @@ function writeJson(file: string, data: unknown): void {
   }
 }
 
-export function getOpenAICodexFromAuth(): OAuthCred | null {
-  const auth = readJson<Record<string, unknown>>(AUTH_FILE);
-  const entry = auth?.[OPENAI_CODEX_PROVIDER] as OAuthCred | undefined;
-  if (!entry || entry.type !== "oauth") return null;
-  return entry;
+function readStoreBytes(): string {
+  try {
+    return fs.readFileSync(STORE_FILE, "utf8");
+  } catch {
+    return "";
+  }
 }
 
-function updateOpenAICodexInAuth(oauth: OAuthCred): void {
-  const auth = readJson<Record<string, unknown>>(AUTH_FILE) ?? {};
-  auth[OPENAI_CODEX_PROVIDER] = oauth;
-  writeJson(AUTH_FILE, auth);
+function trackStore(store: StoreV2, bytes = readStoreBytes()): StoreV2 {
+  storeRevisions.set(store, bytes);
+  return store;
 }
 
-function forceRefreshIfAccessMissing(oauth: OAuthCred): OAuthCred {
-  if (oauth.access || oauth.key || !oauth.refresh) return oauth;
-  return { ...oauth, expires: 0 };
+function withStoreLock<T>(operation: () => T): T {
+  let descriptor: number | undefined;
+  try {
+    fs.mkdirSync(path.dirname(STORE_FILE), { recursive: true, mode: 0o700 });
+    descriptor = fs.openSync(STORE_LOCK_FILE, "wx", 0o600);
+    return operation();
+  } finally {
+    if (descriptor !== undefined) fs.closeSync(descriptor);
+    if (descriptor !== undefined) {
+      try {
+        fs.unlinkSync(STORE_LOCK_FILE);
+      } catch {
+        // A failed cleanup makes the next mutation fail closed instead of
+        // risking concurrent profile-store writes.
+      }
+    }
+  }
+}
+
+function getOpenAICodexFromAuth(
+  ctx: Pick<ExtensionContext, "modelRegistry">,
+): OAuthCred | null {
+  const stored = ctx?.modelRegistry.authStorage.get(OPENAI_CODEX_PROVIDER) as
+    OAuthCred | undefined;
+  if (stored?.type === "oauth") return stored;
+  return null;
 }
 
 function isOAuthExpired(oauth: OAuthCred): boolean {
@@ -129,53 +173,39 @@ function applyOpenAICodexOAuth(
   ctx: ExtensionContext,
   oauth: OAuthCred,
 ): void {
-  const cred: OAuthCred = forceRefreshIfAccessMissing({
+  // AuthStorage is the public Pi ownership boundary for the live credential.
+  // Never mutate auth.json or force an expiry merely to trigger refresh.
+  ctx.modelRegistry.authStorage.set(OPENAI_CODEX_PROVIDER, {
     ...oauth,
     type: "oauth",
-  });
-  updateOpenAICodexInAuth(cred);
+  } as Parameters<typeof ctx.modelRegistry.authStorage.set>[1]);
   ctx.modelRegistry.authStorage.reload();
   pi.events.emit("codexswap:account-changed", undefined);
 }
 
 type ActiveOAuthResult = { oauth: OAuthCred; expired: boolean };
 
+function isConfirmedAuthRejection(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /\b(?:401|403|invalid[_ -]?grant|invalid[_ -]?token|unauthori[sz]ed)\b/i.test(
+    message,
+  );
+}
+
 async function refreshAndGetActiveOAuth(
   ctx: ExtensionContext,
 ): Promise<ActiveOAuthResult | null> {
   const storage = ctx?.modelRegistry?.authStorage;
   if (storage) {
-    let refreshThrew = false;
+    let refreshFailure: "auth-rejected" | "unexpected-failure" | undefined;
     try {
-      if (
-        typeof storage.get === "function" &&
-        typeof storage.set === "function"
-      ) {
-        const cred = storage.get(OPENAI_CODEX_PROVIDER) as
-          OAuthCred | undefined;
-        if (
-          cred?.type === "oauth" &&
-          !cred.access &&
-          !cred.key &&
-          cred.refresh
-        ) {
-          // `cred.refresh` was just verified truthy above, but the local
-          // OAuthCred type keeps it optional. Cast to AuthCredential so the
-          // required `refresh: string` field is satisfied.
-          storage.set(
-            OPENAI_CODEX_PROVIDER,
-            forceRefreshIfAccessMissing(cred) as unknown as Parameters<
-              typeof storage.set
-            >[1],
-          );
-        }
-      }
-
       if (typeof storage.getApiKey === "function") {
         await storage.getApiKey(OPENAI_CODEX_PROVIDER);
       }
-    } catch {
-      refreshThrew = true;
+    } catch (error) {
+      refreshFailure = isConfirmedAuthRejection(error)
+        ? "auth-rejected"
+        : "unexpected-failure";
     }
 
     try {
@@ -183,7 +213,19 @@ async function refreshAndGetActiveOAuth(
         const cred = storage.get(OPENAI_CODEX_PROVIDER) as
           OAuthCred | undefined;
         if (cred?.type === "oauth") {
-          return { oauth: cred, expired: refreshThrew || isOAuthExpired(cred) };
+          const decision = credentialDecision(
+            cred,
+            refreshFailure ? { kind: refreshFailure } : undefined,
+            Date.now(),
+          );
+          if (
+            decision === "remove" &&
+            (storage.get(OPENAI_CODEX_PROVIDER) as OAuthCred | undefined)
+              ?.refresh === cred.refresh
+          ) {
+            storage.remove(OPENAI_CODEX_PROVIDER);
+          }
+          return { oauth: cred, expired: decision === "remove" };
         }
       }
     } catch {
@@ -191,9 +233,7 @@ async function refreshAndGetActiveOAuth(
     }
   }
 
-  const fallback = getOpenAICodexFromAuth();
-  if (!fallback) return null;
-  return { oauth: fallback, expired: isOAuthExpired(fallback) };
+  return null;
 }
 
 async function refreshOAuthInIsolatedStorage(
@@ -204,26 +244,34 @@ async function refreshOAuthInIsolatedStorage(
 
   try {
     writeJson(tmpAuthFile, {
-      [OPENAI_CODEX_PROVIDER]: forceRefreshIfAccessMissing({
-        ...oauth,
-        type: "oauth",
-      }),
+      [OPENAI_CODEX_PROVIDER]: { ...oauth, type: "oauth" },
     });
 
     const storage = AuthStorage.create(tmpAuthFile);
-    let refreshThrew = false;
+    let refreshFailure: "auth-rejected" | "unexpected-failure" | undefined;
     try {
       await storage.getApiKey(OPENAI_CODEX_PROVIDER);
-    } catch {
-      refreshThrew = true;
+    } catch (error) {
+      refreshFailure = isConfirmedAuthRejection(error)
+        ? "auth-rejected"
+        : "unexpected-failure";
     }
 
     const refreshed = storage.get(OPENAI_CODEX_PROVIDER) as
       OAuthCred | undefined;
     if (refreshed?.type === "oauth") {
+      const decision = credentialDecision(
+        oauth,
+        refreshFailure
+          ? { kind: refreshFailure }
+          : { kind: "refreshed", oauth: refreshed },
+        Date.now(),
+      );
+      // A transient failure must not replace a known-good saved credential
+      // with whatever partial state an isolated AuthStorage left behind.
       return {
-        oauth: refreshed,
-        expired: refreshThrew || isOAuthExpired(refreshed),
+        oauth: decision === "replace" ? refreshed : oauth,
+        expired: decision === "remove",
       };
     }
 
@@ -427,8 +475,7 @@ async function usageForProfile(profile: Profile): Promise<CodexUsageSnapshot> {
   let usage = await fetchCodexUsageSnapshot(refresh.oauth);
   if (usage.error !== "auth expired") return usage;
 
-  profile.oauth = { ...profile.oauth, expires: 0 };
-  refresh = await refreshProfileOAuth(profile);
+  refresh = await refreshProfileOAuth(profile, { force: true });
   if (refresh.expired) return usage;
   usage = await fetchCodexUsageSnapshot(refresh.oauth);
   return usage;
@@ -436,13 +483,13 @@ async function usageForProfile(profile: Profile): Promise<CodexUsageSnapshot> {
 
 async function usageForProfiles(
   store: StoreV2,
-  options?: { save?: boolean },
+  options?: { save?: boolean; cwd?: string },
 ): Promise<Array<{ profile: Profile; usage: CodexUsageSnapshot }>> {
   const result: Array<{ profile: Profile; usage: CodexUsageSnapshot }> = [];
   for (const profile of store.profiles) {
     result.push({ profile, usage: await usageForProfile(profile) });
   }
-  if (options?.save !== false) saveStore(store);
+  if (options?.save !== false) saveStore(store, options?.cwd);
   return result;
 }
 
@@ -496,7 +543,7 @@ function inferEmail(oauth: OAuthCred): string | undefined {
   const profile = payload["https://api.openai.com/profile"] as
     Record<string, unknown> | undefined;
   const email = profile?.email ?? payload.email;
-  return typeof email === "string" ? email : undefined;
+  return typeof email === "string" ? normalizeEmail(email) : undefined;
 }
 
 function profileFromOauth(oauth: OAuthCred, label: string): Profile {
@@ -523,9 +570,11 @@ function updateProfileFromOAuth(profile: Profile, oauth: OAuthCred): void {
 
 async function refreshProfileOAuth(
   profile: Profile,
+  options?: { force?: boolean },
 ): Promise<ActiveOAuthResult> {
   if (!profile.oauth.refresh) return { oauth: profile.oauth, expired: true };
   if (
+    !options?.force &&
     !isOAuthExpired(profile.oauth) &&
     (profile.oauth.access || profile.oauth.key)
   ) {
@@ -577,42 +626,35 @@ function findByRefresh(
   return profiles.find((p) => p.oauth.refresh === refresh);
 }
 
-function compactStore(store: StoreV2): StoreV2 {
-  const score = (profile: Profile): number => {
-    const selected =
-      profile.id === store.activeProfileId ? 4_000_000_000_000 : 0;
-    const previous = profile.id === store.lastProfileId ? 2_000_000_000_000 : 0;
-    return selected + previous + (profile.lastUsedAt ?? profile.savedAt ?? 0);
-  };
+function findByEmail(
+  profiles: Profile[],
+  email: string | undefined,
+): Profile | undefined {
+  const normalized = normalizeEmail(email);
+  return normalized
+    ? profiles.find((profile) => normalizeEmail(profile.email) === normalized)
+    : undefined;
+}
 
-  const profiles: Profile[] = [];
-  const byRefresh = new Map<string, Profile>();
-
-  for (const profile of store.profiles) {
-    if (profile.oauth?.type !== "oauth" || !profile.oauth.refresh) continue;
-
-    profile.label = sanitizeLabel(profile.label) || "profile";
-    profile.savedAt = profile.savedAt || Date.now();
-    profile.email = profile.email ?? inferEmail(profile.oauth);
-    profile.accountId =
+function compactStore(store: StoreV2, liveRefresh?: string): StoreV2 {
+  const normalized = store.profiles.map((profile) => ({
+    ...profile,
+    label: sanitizeLabel(profile.label) || "profile",
+    savedAt: profile.savedAt || Date.now(),
+    email: normalizeEmail(profile.email) ?? inferEmail(profile.oauth),
+    accountId:
       profile.accountId ??
       (typeof profile.oauth.accountId === "string"
         ? profile.oauth.accountId
-        : undefined);
-
-    const existing = byRefresh.get(profile.oauth.refresh);
-    if (!existing) {
-      byRefresh.set(profile.oauth.refresh, profile);
-      profiles.push(profile);
-      continue;
-    }
-
-    if (score(profile) > score(existing)) {
-      const index = profiles.indexOf(existing);
-      if (index >= 0) profiles[index] = profile;
-      byRefresh.set(profile.oauth.refresh, profile);
-    }
-  }
+        : undefined),
+  }));
+  const deduped = dedupeProfiles(normalized, {
+    activeProfileId: store.activeProfileId,
+    lastProfileId: store.lastProfileId,
+    liveRefresh,
+  });
+  const profiles = deduped.profiles as Profile[];
+  storeDedupeRedirects.set(store, deduped.redirects as Map<string, Profile>);
 
   const labels = new Set<string>();
   for (const profile of profiles) {
@@ -627,21 +669,8 @@ function compactStore(store: StoreV2): StoreV2 {
   }
 
   store.profiles = profiles;
-  if (
-    store.activeProfileId &&
-    !profiles.some((profile) => profile.id === store.activeProfileId)
-  ) {
-    store.activeProfileId = profiles[0]?.id;
-  }
-  if (
-    store.lastProfileId &&
-    !profiles.some((profile) => profile.id === store.lastProfileId)
-  ) {
-    store.lastProfileId = undefined;
-  }
-  if (store.lastProfileId === store.activeProfileId) {
-    store.lastProfileId = undefined;
-  }
+  store.activeProfileId = deduped.activeProfileId;
+  store.lastProfileId = deduped.lastProfileId;
 
   return store;
 }
@@ -706,36 +735,93 @@ function loadStore(): StoreV2 {
     Array.isArray((raw as StoreV2).profiles)
   ) {
     const s = raw as StoreV2;
-    return compactStore({
-      version: 2,
-      activeProfileId: s.activeProfileId,
-      lastProfileId: s.lastProfileId,
-      profiles: s.profiles,
-    });
+    return trackStore(
+      compactStore({
+        version: 2,
+        activeProfileId: s.activeProfileId,
+        lastProfileId: s.lastProfileId,
+        profiles: s.profiles,
+      }),
+    );
   }
 
   if (raw && (raw as LegacyStore).version === 1 && (raw as LegacyStore).slots) {
-    return migrateLegacyStore(raw as LegacyStore);
+    return trackStore(migrateLegacyStore(raw as LegacyStore));
   }
 
-  return { version: 2, profiles: [] };
+  return trackStore({ version: 2, profiles: [] });
 }
 
-function saveStore(store: StoreV2): void {
-  writeJson(STORE_FILE, store);
+function saveStore(store: StoreV2, cwd?: string): void {
+  withStoreLock(() => {
+    if (readStoreBytes() !== storeRevisions.get(store)) {
+      // Merge only short-lived local metadata changes while holding the lock.
+      // Remote refresh/usage work happens before this point.
+      const current = readJson<StoreV2>(STORE_FILE);
+      if (current?.version === 2 && Array.isArray(current.profiles)) {
+        const incomingById = new Map(
+          store.profiles.map((profile) => [profile.id, profile]),
+        );
+        const merged = current.profiles.map((profile) => {
+          const incoming = incomingById.get(profile.id);
+          incomingById.delete(profile.id);
+          return incoming && incoming.savedAt >= profile.savedAt
+            ? incoming
+            : profile;
+        });
+        merged.push(...incomingById.values());
+        store.profiles = merged;
+        store.activeProfileId =
+          store.activeProfileId ?? current.activeProfileId;
+        store.lastProfileId = store.lastProfileId ?? current.lastProfileId;
+      }
+    }
+    const redirects = new Map(storeDedupeRedirects.get(store));
+    for (const [selector, profile] of dedupeProfiles(store.profiles, {
+      activeProfileId: store.activeProfileId,
+      lastProfileId: store.lastProfileId,
+    }).redirects as Map<string, Profile>) {
+      redirects.set(selector, profile);
+    }
+    compactStore(store);
+    repairPreferenceSelectors(redirects, store.profiles, cwd);
+    const temporary = `${STORE_FILE}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`;
+    try {
+      fs.writeFileSync(temporary, JSON.stringify(store, null, 2), {
+        encoding: "utf8",
+        mode: 0o600,
+        flag: "wx",
+      });
+      fs.renameSync(temporary, STORE_FILE);
+      try {
+        fs.chmodSync(STORE_FILE, 0o600);
+      } catch {
+        // Best effort on filesystems without POSIX permissions.
+      }
+      storeRevisions.set(store, readStoreBytes());
+    } finally {
+      try {
+        fs.unlinkSync(temporary);
+      } catch {
+        // The atomic rename succeeded or the temporary file is absent.
+      }
+    }
+  });
 }
 
-function ensureBootstrapped(store: StoreV2): StoreV2 {
-  const live = getOpenAICodexFromAuth();
-  if (!live) return compactStore(store);
+function ensureBootstrapped(store: StoreV2, live: OAuthCred | null): StoreV2 {
+  const activeOAuth = live;
+  if (!activeOAuth) return compactStore(store);
 
-  let liveProfile = findByRefresh(store.profiles, live.refresh);
+  let liveProfile =
+    findByRefresh(store.profiles, activeOAuth.refresh) ??
+    findByEmail(store.profiles, inferEmail(activeOAuth));
   if (!liveProfile) {
-    const label = defaultLabelFor(live, store.profiles);
-    liveProfile = profileFromOauth(live, label);
+    const label = defaultLabelFor(activeOAuth, store.profiles);
+    liveProfile = profileFromOauth(activeOAuth, label);
     store.profiles.push(liveProfile);
   } else {
-    updateProfileFromOAuth(liveProfile, live);
+    updateProfileFromOAuth(liveProfile, activeOAuth);
   }
   liveProfile.lastUsedAt = Date.now();
 
@@ -743,11 +829,7 @@ function ensureBootstrapped(store: StoreV2): StoreV2 {
     store.activeProfileId = liveProfile.id;
   }
 
-  return compactStore(store);
-}
-
-function getProjectPreferredFile(cwd: string): string {
-  return path.join(cwd, ".pi", "codex-swap.local.json");
+  return compactStore(store, activeOAuth.refresh);
 }
 
 function readPreferredConfig(file: string): PreferredConfig | null {
@@ -756,52 +838,109 @@ function readPreferredConfig(file: string): PreferredConfig | null {
   return config;
 }
 
+function repairPreferenceSelectors(
+  redirects: Map<string, Profile>,
+  profiles: Profile[],
+  cwd?: string,
+): void {
+  const redirect = (selector: string | undefined): string | undefined => {
+    if (!selector) return undefined;
+    const normalizedLabel = selector.trim().toLocaleLowerCase();
+    const selected = profiles.find(
+      (profile) =>
+        profile.id === selector ||
+        profile.accountId === selector ||
+        profile.label.trim().toLocaleLowerCase() === normalizedLabel,
+    );
+    return (
+      selected?.accountId ??
+      redirectPreferenceSelector(selector, redirects) ??
+      redirectPreferenceSelector(`label:${normalizedLabel}`, redirects)
+    );
+  };
+
+  const global = readPreferredConfig(GLOBAL_PREFERRED_FILE);
+  const globalSelector = global?.preferredAccountId ?? global?.preferredProfile;
+  const globalReplacement = redirect(globalSelector);
+  if (global && globalReplacement && globalReplacement !== globalSelector) {
+    writeJson(GLOBAL_PREFERRED_FILE, { preferredAccountId: globalReplacement });
+  }
+
+  if (!cwd) return;
+  const root = discoverRepositoryRoot(cwd);
+  if (!root) return;
+  const repository = readRepositoryPreference(root);
+  const repositoryReplacement =
+    repository.state === "valid" ? redirect(repository.accountId) : undefined;
+  if (
+    repository.state === "valid" &&
+    repositoryReplacement &&
+    repositoryReplacement !== repository.accountId
+  ) {
+    writeRepositoryPreference(root, repositoryReplacement);
+  }
+}
+
 function getPreferredConfig(
   cwd: string,
 ):
-  | { scope: PreferredScope; path: string; preferredProfile: string }
+  | { scope: PreferredScope; path: string; preferredAccountId: string }
   | undefined {
-  const projectFile = getProjectPreferredFile(cwd);
-  const project = readPreferredConfig(projectFile);
-  if (
-    typeof project?.preferredProfile === "string" &&
-    project.preferredProfile.trim()
-  ) {
-    return {
-      scope: "project",
-      path: projectFile,
-      preferredProfile: project.preferredProfile.trim(),
-    };
-  }
-
+  const root = discoverRepositoryRoot(cwd);
+  const repository = root
+    ? readRepositoryPreference(root)
+    : { state: "absent" as const };
   const global = readPreferredConfig(GLOBAL_PREFERRED_FILE);
-  if (
-    typeof global?.preferredProfile === "string" &&
-    global.preferredProfile.trim()
-  ) {
+  const globalSelector = global?.preferredAccountId ?? global?.preferredProfile;
+  if (typeof globalSelector === "string" && globalSelector.trim()) {
+    const globalAccountId = globalSelector.trim();
+    if (repository.state === "absent") {
+      return {
+        scope: "global",
+        path: GLOBAL_PREFERRED_FILE,
+        preferredAccountId: globalAccountId,
+      };
+    }
+  }
+  if (repository.state === "valid") {
     return {
-      scope: "global",
-      path: GLOBAL_PREFERRED_FILE,
-      preferredProfile: global.preferredProfile.trim(),
+      scope: "repository",
+      path: repository.path,
+      preferredAccountId: repository.accountId,
     };
   }
-
+  if (repository.state === "invalid") {
+    // A repository selector is intentionally fail-closed. Do not fall back to
+    // the global preference when untrusted repository input is malformed.
+    return {
+      scope: "repository",
+      path: repository.path ?? repositoryPreferencePath(root!),
+      preferredAccountId: "",
+    };
+  }
   return undefined;
 }
 
 function setPreferredConfig(
   scope: PreferredScope,
   cwd: string,
-  preferredProfile?: string,
+  preferredAccountId?: string,
 ): string {
-  const file =
-    scope === "project" ? getProjectPreferredFile(cwd) : GLOBAL_PREFERRED_FILE;
-  const value = preferredProfile?.trim();
+  const value = preferredAccountId?.trim();
+  if (scope === "repository") {
+    const root = discoverRepositoryRoot(cwd);
+    if (!root)
+      throw new Error("No safe repository found for repository preference");
+    return value
+      ? writeRepositoryPreference(root, value)
+      : clearRepositoryPreference(root);
+  }
+  const file = GLOBAL_PREFERRED_FILE;
   if (!value) {
     if (fs.existsSync(file)) fs.rmSync(file);
     return file;
   }
-  writeJson(file, { preferredProfile: value });
+  writeJson(file, { preferredAccountId: value });
   return file;
 }
 
@@ -863,12 +1002,12 @@ async function prepareProfileForSwitch(
   const result = await refreshProfileOAuth(profile);
   if (!result.expired) {
     profile.lastUsedAt = Date.now();
-    saveStore(store);
+    saveStore(store, ctx.cwd);
     return true;
   }
 
   removeProfiles(store, [profile]);
-  saveStore(store);
+  saveStore(store, ctx.cwd);
   ctx.ui.notify(
     [
       `Dropped expired Codex profile before switching: ${profile.label} (${shortWho(profile)})`,
@@ -892,21 +1031,37 @@ async function configurePreferredProfile(
     return;
   }
 
-  const actionOptions = options?.startup
-    ? ["Set project preferred account", "Set global preferred account", "Skip"]
-    : [
-        "Set project preferred account",
-        "Set global preferred account",
-        "Clear project preferred account",
-        "Clear global preferred account",
-        "Cancel",
-      ];
+  const repositoryRoot = discoverRepositoryRoot(ctx.cwd);
+  const actionOptions = repositoryRoot
+    ? options?.startup
+      ? [
+          "Set repository preferred account",
+          "Set global preferred account",
+          "Skip",
+        ]
+      : [
+          "Set repository preferred account",
+          "Set global preferred account",
+          "Clear repository preferred account",
+          "Clear global preferred account",
+          "Cancel",
+        ]
+    : options?.startup
+      ? ["Set global preferred account", "Skip"]
+      : [
+          "Set global preferred account",
+          "Clear global preferred account",
+          "Cancel",
+        ];
   const action = await ctx.ui.select("Preferred Codex account", actionOptions);
   if (!action || action === "Skip" || action === "Cancel") return;
 
-  if (action === "Clear project preferred account") {
-    const file = setPreferredConfig("project", ctx.cwd);
-    ctx.ui.notify(`Cleared project preferred Codex account: ${file}`, "info");
+  if (action === "Clear repository preferred account") {
+    const file = setPreferredConfig("repository", ctx.cwd);
+    ctx.ui.notify(
+      `Cleared repository preferred Codex account: ${file}`,
+      "info",
+    );
     return;
   }
 
@@ -916,15 +1071,14 @@ async function configurePreferredProfile(
     return;
   }
 
-  const scope: PreferredScope = action.includes("project")
-    ? "project"
+  const scope: PreferredScope = action.includes("repository")
+    ? "repository"
     : "global";
-  const current = getPreferredConfig(ctx.cwd)?.preferredProfile;
+  const current = getPreferredConfig(ctx.cwd)?.preferredAccountId;
   const profileChoice = await ctx.ui.select(
     `Select ${scope} preferred Codex account`,
     store.profiles.map((profile) => {
-      const selected =
-        profile.label === current || profile.id === current ? " (current)" : "";
+      const selected = profile.accountId === current ? " (current)" : "";
       return `${preferredProfileLabel(profile)}${selected}`;
     }),
   );
@@ -939,7 +1093,11 @@ async function configurePreferredProfile(
     return;
   }
 
-  const file = setPreferredConfig(scope, ctx.cwd, profile.label);
+  if (!profile.accountId) {
+    ctx.ui.notify("Selected Codex profile has no stable account ID.", "error");
+    return;
+  }
+  const file = setPreferredConfig(scope, ctx.cwd, profile.accountId);
   ctx.ui.notify(
     `Saved ${scope} preferred Codex account: ${profile.label}\n${file}`,
     "info",
@@ -949,6 +1107,7 @@ async function configurePreferredProfile(
 function syncStoreProfileFromOAuth(store: StoreV2, oauth: OAuthCred): void {
   const profile =
     findByRefresh(store.profiles, oauth.refresh) ??
+    findByEmail(store.profiles, inferEmail(oauth)) ??
     (store.activeProfileId
       ? store.profiles.find((p) => p.id === store.activeProfileId)
       : undefined);
@@ -960,6 +1119,7 @@ function syncStoreProfileFromOAuth(store: StoreV2, oauth: OAuthCred): void {
   profile.accountId =
     typeof oauth.accountId === "string" ? oauth.accountId : profile.accountId;
   store.activeProfileId = profile.id;
+  compactStore(store, oauth.refresh);
 }
 
 async function refreshActiveOAuthAndSyncStore(
@@ -992,7 +1152,7 @@ async function refreshActiveOAuthAndSyncStore(
       if (store.lastProfileId && droppedIds.has(store.lastProfileId)) {
         store.lastProfileId = undefined;
       }
-      saveStore(store);
+      saveStore(store, ctx.cwd);
       ctx.ui.notify(
         [
           `Dropped ${dropped.length} expired Codex profile(s):`,
@@ -1007,7 +1167,7 @@ async function refreshActiveOAuthAndSyncStore(
 
   if (result.oauth) {
     syncStoreProfileFromOAuth(store, result.oauth);
-    saveStore(store);
+    saveStore(store, ctx.cwd);
   }
   return result.oauth;
 }
@@ -1017,16 +1177,30 @@ async function maybeApplyPreferredProfile(
   ctx: ExtensionContext,
   store: StoreV2,
 ): Promise<{ applied: boolean; configured: boolean }> {
+  repairPreferenceSelectors(
+    storeDedupeRedirects.get(store) ?? new Map(),
+    store.profiles,
+    ctx.cwd,
+  );
   const configured = getPreferredConfig(ctx.cwd);
   if (!configured) return { applied: false, configured: false };
 
-  const live = getOpenAICodexFromAuth();
+  const live = getOpenAICodexFromAuth(ctx);
   if (!live) return { applied: false, configured: true };
 
-  const target = resolveProfile(store.profiles, configured.preferredProfile);
+  const root = discoverRepositoryRoot(ctx.cwd);
+  const repository = root
+    ? readRepositoryPreference(root)
+    : { state: "absent" as const };
+  const global = readPreferredConfig(GLOBAL_PREFERRED_FILE)?.preferredAccountId;
+  const resolved = resolvePreferredProfile(repository, global, store.profiles);
+  const target =
+    resolved.kind === "selected"
+      ? store.profiles.find((profile) => profile.id === resolved.profile.id)
+      : undefined;
   if (!target) {
     ctx.ui.notify(
-      `Preferred Codex account not found: ${configured.preferredProfile} (${configured.scope})`,
+      "Preferred Codex account is unavailable or unsafe; active account was left unchanged.",
       "warning",
     );
     return { applied: false, configured: true };
@@ -1035,7 +1209,7 @@ async function maybeApplyPreferredProfile(
   const current = findByRefresh(store.profiles, live.refresh);
   store.activeProfileId = current?.id ?? store.activeProfileId;
   if (current?.id === target.id) {
-    saveStore(store);
+    saveStore(store, ctx.cwd);
     return { applied: false, configured: true };
   }
   if (!(await prepareProfileForSwitch(ctx, store, target))) {
@@ -1043,6 +1217,16 @@ async function maybeApplyPreferredProfile(
   }
 
   store.lastProfileId = current?.id;
+  const liveBeforeCommit = ctx.modelRegistry.authStorage.get(
+    OPENAI_CODEX_PROVIDER,
+  ) as OAuthCred | undefined;
+  if (liveBeforeCommit?.refresh !== live.refresh) {
+    ctx.ui.notify(
+      "Codex login changed while applying preference; retry if needed.",
+      "warning",
+    );
+    return { applied: false, configured: true };
+  }
   applyOpenAICodexOAuth(pi, ctx, target.oauth);
   store.activeProfileId = target.id;
   await refreshActiveOAuthAndSyncStore(ctx, store);
@@ -1069,7 +1253,7 @@ function helpText(): string {
     "  /codexswap use <label|#>   Switch to a saved account",
     "  /codexswap rm <label|#>    Remove a saved account",
     "  /codexswap rename <sel> <new-label>",
-    "  /codexpref                 Set preferred account (project/global)",
+    "  /codexpref                 Set preferred account (repository/global)",
     "",
     "Flow to add a 3rd account:",
     "  1) /login openai-codex (sign into new account)",
@@ -1078,6 +1262,7 @@ function helpText(): string {
 }
 
 export default function codexSwapExtension(pi: ExtensionAPI) {
+  let startupPreferenceAttempted = false;
   const showWho = (
     ctx: ExtensionCommandContext,
     live: OAuthCred,
@@ -1106,12 +1291,20 @@ export default function codexSwapExtension(pi: ExtensionAPI) {
   };
 
   pi.on("session_start", async (event, ctx) => {
-    if (event.reason !== "startup" || !ctx.hasUI) return;
+    if (
+      startupPreferenceAttempted ||
+      event.reason !== "startup" ||
+      !ctx.hasUI ||
+      !ctx.isIdle()
+    ) {
+      return;
+    }
+    startupPreferenceAttempted = true;
 
-    const live = getOpenAICodexFromAuth();
+    const live = getOpenAICodexFromAuth(ctx);
     if (!live) return;
 
-    const store = ensureBootstrapped(loadStore());
+    const store = ensureBootstrapped(loadStore(), live);
     const preferred = await maybeApplyPreferredProfile(pi, ctx, store);
     if (!preferred.applied) {
       await refreshActiveOAuthAndSyncStore(ctx, store);
@@ -1124,28 +1317,35 @@ export default function codexSwapExtension(pi: ExtensionAPI) {
   pi.registerCommand("codexwho", {
     description: "Show the currently active OpenAI Codex account",
     handler: async (_args, ctx) => {
-      const live = getOpenAICodexFromAuth();
+      const live = getOpenAICodexFromAuth(ctx);
       if (!live) {
-        ctx.ui.notify("No openai-codex OAuth found in auth.json.", "error");
+        ctx.ui.notify(
+          "No openai-codex OAuth found in Pi auth storage.",
+          "error",
+        );
         return;
       }
-      const store = ensureBootstrapped(loadStore());
-      saveStore(store);
+      const store = ensureBootstrapped(loadStore(), live);
+      saveStore(store, ctx.cwd);
       showWho(ctx, live, store);
     },
   });
 
   pi.registerCommand("codexpref", {
-    description: "Set the preferred Codex account for project or global scope",
+    description:
+      "Set the preferred Codex account for repository or global scope",
     handler: async (_args, ctx) => {
-      const live = getOpenAICodexFromAuth();
+      const live = getOpenAICodexFromAuth(ctx);
       if (!live) {
-        ctx.ui.notify("No openai-codex OAuth found in auth.json.", "error");
+        ctx.ui.notify(
+          "No openai-codex OAuth found in Pi auth storage.",
+          "error",
+        );
         return;
       }
 
-      const store = ensureBootstrapped(loadStore());
-      saveStore(store);
+      const store = ensureBootstrapped(loadStore(), live);
+      saveStore(store, ctx.cwd);
       await configurePreferredProfile(ctx, store);
     },
   });
@@ -1153,9 +1353,12 @@ export default function codexSwapExtension(pi: ExtensionAPI) {
   pi.registerCommand("codexswap", {
     description: "Manage/switch multiple OpenAI Codex OAuth accounts",
     handler: async (args, ctx) => {
-      const live = getOpenAICodexFromAuth();
+      const live = getOpenAICodexFromAuth(ctx);
       if (!live) {
-        ctx.ui.notify("No openai-codex OAuth found in auth.json.", "error");
+        ctx.ui.notify(
+          "No openai-codex OAuth found in Pi auth storage.",
+          "error",
+        );
         return;
       }
 
@@ -1164,14 +1367,14 @@ export default function codexSwapExtension(pi: ExtensionAPI) {
       const sub = (parts[0] ?? "").toLowerCase();
       const rest = raw.length ? raw.slice(parts[0]?.length ?? 0).trim() : "";
 
-      const store = ensureBootstrapped(loadStore());
+      const store = ensureBootstrapped(loadStore(), live);
       const liveProfile = findByRefresh(store.profiles, live.refresh);
       if (liveProfile) store.activeProfileId = liveProfile.id;
 
       if (!sub || sub === "next" || sub === "toggle") {
         if (!ensureIdleForAccountSwitch(ctx)) return;
         if (store.profiles.length < 2) {
-          saveStore(store);
+          saveStore(store, ctx.cwd);
           ctx.ui.notify(
             "Need at least 2 saved Codex accounts. Add another with /login openai-codex then /codexswap add <label>.",
             "warning",
@@ -1201,7 +1404,7 @@ export default function codexSwapExtension(pi: ExtensionAPI) {
         store.lastProfileId = currentId;
         applyOpenAICodexOAuth(pi, ctx, target.oauth);
         store.activeProfileId = target.id;
-        saveStore(store);
+        saveStore(store, ctx.cwd);
 
         const activeOauth = await refreshActiveOAuthAndSyncStore(ctx, store);
         const usage = activeOauth
@@ -1230,7 +1433,7 @@ export default function codexSwapExtension(pi: ExtensionAPI) {
         applyOpenAICodexOAuth(pi, ctx, target.oauth);
         store.activeProfileId = target.id;
         store.lastProfileId = currentId;
-        saveStore(store);
+        saveStore(store, ctx.cwd);
 
         const activeOauth = await refreshActiveOAuthAndSyncStore(ctx, store);
         const usage = activeOauth
@@ -1248,7 +1451,7 @@ export default function codexSwapExtension(pi: ExtensionAPI) {
         const usage = activeResult
           ? await fetchCodexUsageSnapshot(activeResult.oauth)
           : { windows: [], error: "auth unavailable" };
-        const usageByProfile = await usageForProfiles(store);
+        const usageByProfile = await usageForProfiles(store, { cwd: ctx.cwd });
         const lines = store.profiles.map((p, i) => {
           const active = p.id === store.activeProfileId ? "*" : " ";
           const liveMark =
@@ -1265,7 +1468,7 @@ export default function codexSwapExtension(pi: ExtensionAPI) {
             : "usage unknown";
           return `${active} ${i + 1}. ${p.label} - ${shortWho(p)} - ${usageText} ${liveMark}`.trim();
         });
-        saveStore(store);
+        saveStore(store, ctx.cwd);
         ctx.ui.notify(
           [
             `Profiles: ${store.profiles.length}`,
@@ -1283,7 +1486,7 @@ export default function codexSwapExtension(pi: ExtensionAPI) {
 
       if (sub === "usage" || sub === "quota") {
         if (rest === "all" || rest === "*") {
-          const all = await usageForProfiles(store);
+          const all = await usageForProfiles(store, { cwd: ctx.cwd });
           ctx.ui.notify(
             all
               .map(({ profile, usage }, i) =>
@@ -1302,7 +1505,7 @@ export default function codexSwapExtension(pi: ExtensionAPI) {
             return;
           }
           const usage = await usageForProfile(target);
-          saveStore(store);
+          saveStore(store, ctx.cwd);
           ctx.ui.notify(
             [profileUsageLine(target, usage), "", usageSummary(usage)].join(
               "\n",
@@ -1327,7 +1530,7 @@ export default function codexSwapExtension(pi: ExtensionAPI) {
           return;
         }
 
-        const all = await usageForProfiles(store);
+        const all = await usageForProfiles(store, { cwd: ctx.cwd });
         const usable = all
           .map((entry) => ({ ...entry, primary: primaryUsage(entry.usage) }))
           .filter(
@@ -1356,7 +1559,7 @@ export default function codexSwapExtension(pi: ExtensionAPI) {
           store.lastProfileId = currentId;
         applyOpenAICodexOAuth(pi, ctx, best.profile.oauth);
         store.activeProfileId = best.profile.id;
-        saveStore(store);
+        saveStore(store, ctx.cwd);
         // Refresh + sync so an expired best profile is dropped instead of
         // being preserved in the store with a stale credential.
         await refreshActiveOAuthAndSyncStore(ctx, store);
@@ -1376,7 +1579,7 @@ export default function codexSwapExtension(pi: ExtensionAPI) {
           return;
         }
 
-        const all = await usageForProfiles(store);
+        const all = await usageForProfiles(store, { cwd: ctx.cwd });
         const sorted = all
           .map((entry) => ({
             ...entry,
@@ -1413,7 +1616,10 @@ export default function codexSwapExtension(pi: ExtensionAPI) {
           rest === "dry" ||
           rest === "--dry-run" ||
           rest === "check";
-        const all = await usageForProfiles(store, { save: !dryRun });
+        const all = await usageForProfiles(store, {
+          save: !dryRun,
+          cwd: ctx.cwd,
+        });
         const expired = all
           .filter(({ usage }) => usage.error === "auth expired")
           .map(({ profile }) => profile);
@@ -1445,7 +1651,7 @@ export default function codexSwapExtension(pi: ExtensionAPI) {
         if (store.lastProfileId && expiredIds.has(store.lastProfileId)) {
           store.lastProfileId = undefined;
         }
-        saveStore(store);
+        saveStore(store, ctx.cwd);
 
         ctx.ui.notify(
           [`Purged ${expired.length} expired profile(s):`, ...lines].join("\n"),
@@ -1460,10 +1666,12 @@ export default function codexSwapExtension(pi: ExtensionAPI) {
           ctx.ui.notify("No openai-codex OAuth backup found.", "warning");
           return;
         }
-        const existing = findByRefresh(store.profiles, backup.refresh);
+        const existing =
+          findByRefresh(store.profiles, backup.refresh) ??
+          findByEmail(store.profiles, inferEmail(backup));
         if (existing) {
           updateProfileFromOAuth(existing, backup);
-          saveStore(store);
+          saveStore(store, ctx.cwd);
           ctx.ui.notify(
             `Updated backup profile: ${existing.label} (${shortWho(existing)})`,
             "info",
@@ -1477,7 +1685,7 @@ export default function codexSwapExtension(pi: ExtensionAPI) {
         );
         const profile = profileFromOauth(backup, label);
         store.profiles.push(profile);
-        saveStore(store);
+        saveStore(store, ctx.cwd);
         ctx.ui.notify(
           `Imported backup profile: ${profile.label} (${shortWho(profile)})`,
           "info",
@@ -1486,7 +1694,7 @@ export default function codexSwapExtension(pi: ExtensionAPI) {
       }
 
       if (sub === "who") {
-        saveStore(store);
+        saveStore(store, ctx.cwd);
         showWho(ctx, live, store);
         return;
       }
@@ -1505,11 +1713,13 @@ export default function codexSwapExtension(pi: ExtensionAPI) {
               : "";
         const desired = sanitizeLabel(forcedLabel || rest);
 
-        const existing = findByRefresh(store.profiles, live.refresh);
+        const existing =
+          findByRefresh(store.profiles, live.refresh) ??
+          findByEmail(store.profiles, inferEmail(live));
         if (existing) {
           existing.oauth = live;
           existing.savedAt = Date.now();
-          existing.email = inferEmail(live);
+          existing.email = inferEmail(live) ?? existing.email;
           existing.accountId =
             typeof live.accountId === "string" ? live.accountId : undefined;
           existing.lastUsedAt = Date.now();
@@ -1521,7 +1731,8 @@ export default function codexSwapExtension(pi: ExtensionAPI) {
             );
           }
           store.activeProfileId = existing.id;
-          saveStore(store);
+          compactStore(store, live.refresh);
+          saveStore(store, ctx.cwd);
           ctx.ui.notify(
             `Updated profile: ${existing.label} (${shortWho(existing)})`,
             "info",
@@ -1535,7 +1746,8 @@ export default function codexSwapExtension(pi: ExtensionAPI) {
         const profile = profileFromOauth(live, label);
         store.profiles.push(profile);
         store.activeProfileId = profile.id;
-        saveStore(store);
+        compactStore(store, live.refresh);
+        saveStore(store, ctx.cwd);
         ctx.ui.notify(
           `Saved new profile: ${profile.label} (${shortWho(profile)})`,
           "info",
@@ -1558,7 +1770,7 @@ export default function codexSwapExtension(pi: ExtensionAPI) {
           store.lastProfileId = store.activeProfileId;
         }
         store.activeProfileId = target.id;
-        saveStore(store);
+        saveStore(store, ctx.cwd);
 
         const activeOauth = await refreshActiveOAuthAndSyncStore(ctx, store);
         const usage = activeOauth
@@ -1585,7 +1797,7 @@ export default function codexSwapExtension(pi: ExtensionAPI) {
         if (store.lastProfileId === target.id) {
           store.lastProfileId = undefined;
         }
-        saveStore(store);
+        saveStore(store, ctx.cwd);
         ctx.ui.notify(`Removed profile: ${target.label}`, "info");
         return;
       }
@@ -1612,7 +1824,7 @@ export default function codexSwapExtension(pi: ExtensionAPI) {
           newLabelRaw,
           target.id,
         );
-        saveStore(store);
+        saveStore(store, ctx.cwd);
         ctx.ui.notify(`Renamed profile to: ${target.label}`, "info");
         return;
       }

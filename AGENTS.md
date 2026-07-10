@@ -32,6 +32,8 @@ Skills may live in `personal-context-files` or this repo's `skills/` package. Re
 - `pi-extensions/interaction-notifier.ts` — desktop notifications for ask interaction events (macOS `osascript`, toggle via `/notif-config [ask]`)
 - `pi-extensions/check.ts` — auto-runs tsc + biome + eslint after agent completes work
 - `pi-extensions/auto-update/index.ts` — checks for pi updates on startup and updates in the background
+- `pi-extensions/codex-swap/` — private, locked multi-account switching for Pi's built-in `openai-codex` OAuth login
+- `pi-extensions/honcho-memory/` — local Honcho persistent memory extension (fork of `@agney/pi-honcho-memory` with stale-`ctx` guards; automatic conversation export is explicit opt-in and filters credential-shaped content)
 - `node_modules/@quintinshaw/pi-dynamic-workflows/extensions/workflow.ts` — re-exported dynamic-workflows extension (vm-sandboxed JS scripts that fan out to many subagents via `agent()`/`parallel()`/`phase()`; journaled resume, worktree isolation, `/workflows` TUI; see `.pi/skills/subagent-orchestration/SKILL.md` for usage)
 - `node_modules/@teelicht/pi-grepai/src/extension/index.ts` — re-exported GrepAI CLI bridge tools and commands
 

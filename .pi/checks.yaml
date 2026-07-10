@@ -4,13 +4,13 @@
 
 checks:
   - name: format
-    command: bun run format
-    description: Auto-fix formatting
+    command: bun run format:check
+    description: Validate formatting without modifying files
 
   - name: check-extension-build
     command: bun build pi-extensions/check.ts --target=node --outfile=/tmp/pi-check-extension.js
     description: Smoke-build the check extension
 
-  - name: rtango
-    command: rtango status --ignore-fetch-failures
-    description: Verify rtango-managed skills are in sync
+  - name: codex-swap
+    command: bun run test:codex-swap && bun build pi-extensions/codex-swap/index.ts --target=node --outfile=/tmp/pi-codex-swap-extension.js
+    description: Test and smoke-build the Codex account switcher

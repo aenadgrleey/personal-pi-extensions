@@ -19,6 +19,35 @@ Read [`.rtango/spec.yaml`](./.rtango/spec.yaml) for the managed skills inventory
 - a local `codex-swap` extension for switching Pi's saved ChatGPT/Codex OAuth accounts
 - an RTK/Codex bridge that rewrites Codex `exec_command` calls through `rtk rewrite` while leaving the Codex terminal implementation intact
 - a re-exported `@teelicht/pi-grepai` GrepAI CLI bridge
+- a re-exported `pi-mcp-adapter` MCP client (one `mcp` proxy tool; lazy server start)
+
+## MCP adapter
+
+`pi-mcp-adapter` is loaded through this package manifest (`node_modules/pi-mcp-adapter/index.ts`).
+It does **not** dump every MCP tool into context; the agent searches and calls tools on demand via the `mcp` proxy.
+
+Config files (merged; later wins on same server name):
+
+| Scope                  | Path                                    | Use for                              |
+| ---------------------- | --------------------------------------- | ------------------------------------ |
+| Global (shared)        | `~/.config/mcp/mcp.json`                | Servers you want in every Pi session |
+| Project                | `<repo>/.mcp.json`                      | Servers only for that repository     |
+| Pi override (optional) | `~/.pi/agent/mcp.json` / `.pi/mcp.json` | Adapter-only settings / host imports |
+
+Example server entry:
+
+```json
+{
+  "mcpServers": {
+    "chrome-devtools": {
+      "command": "npx",
+      "args": ["-y", "chrome-devtools-mcp@latest"]
+    }
+  }
+}
+```
+
+After restarting Pi: `/mcp` for the panel, `/mcp setup` to import host configs or scaffold, `/mcp tools` to list tools.
 
 ## Setup model
 

@@ -18,6 +18,7 @@
       "node_modules/@quintinshaw/pi-dynamic-workflows/extensions/workflow.ts",
       "node_modules/@howaboua/pi-codex-conversion/src/index.ts",
       "node_modules/@teelicht/pi-grepai/src/extension/index.ts",
+      "node_modules/pi-mcp-adapter/index.ts",
       "node_modules/pi-sensitive-guard/index.ts",
       "pi-extensions/honcho-memory/index.ts",
       "pi-extensions/indicators.ts",
@@ -33,8 +34,8 @@
     "format:check": "bunx prettier --check .",
     "test:codex-swap": "bun test pi-extensions/codex-swap/*.test.ts",
     "test:cursor-bridge": "bun test pi-extensions/cursor/*.test.ts",
-    "check": "bun run format:check && bun run test:codex-swap && bun run test:cursor-bridge && bun run test:indicators && bun build pi-extensions/check.ts --target=node --outfile=/tmp/pi-check-extension.js && bun build pi-extensions/codex-swap/index.ts --target=node --outfile=/tmp/pi-codex-swap-extension.js && bun build pi-extensions/cursor/index.ts --target=node --outfile=/tmp/pi-cursor-bridge-extension.js && bun build pi-extensions/indicators.ts --target=node --outfile=/tmp/pi-indicators-extension.js",
-    "test:indicators": "bun test pi-extensions/indicators.test.ts"
+    "test:indicators": "bun test pi-extensions/indicators.test.ts",
+    "check": "bun run format:check && bun run test:codex-swap && bun run test:cursor-bridge && bun run test:indicators && bun build pi-extensions/check.ts --target=node --outfile=/tmp/pi-check-extension.js && bun build pi-extensions/codex-swap/index.ts --target=node --outfile=/tmp/pi-codex-swap-extension.js && bun build pi-extensions/cursor/index.ts --target=node --outfile=/tmp/pi-cursor-bridge-extension.js && bun build pi-extensions/indicators.ts --target=node --outfile=/tmp/pi-indicators-extension.js"
   },
   "dependencies": {
     "@earendil-works/pi-agent-core": "^0.78.1",
@@ -47,9 +48,10 @@
     "@quintinshaw/pi-dynamic-workflows": "^2.12.1",
     "@sinclair/typebox": "npm:typebox@^1.1.38",
     "@teelicht/pi-grepai": "^0.1.1",
-    "js-yaml": "^4.1.0",
     "@tunnckocore/pi-gpt-fast-mode": "^0.4.0",
+    "js-yaml": "^4.1.0",
     "pi-cursor-sdk": "^0.1.56",
+    "pi-mcp-adapter": "^2.11.0",
     "pi-sensitive-guard": "0.4.2",
     "typebox": "^1.1.38"
   },

@@ -36,6 +36,7 @@ Skills may live in `personal-context-files` or this repo's `skills/` package. Re
 - `pi-extensions/honcho-memory/` — local Honcho persistent memory extension (fork of `@agney/pi-honcho-memory` with stale-`ctx` guards; automatic conversation export is explicit opt-in and filters credential-shaped content)
 - `node_modules/@quintinshaw/pi-dynamic-workflows/extensions/workflow.ts` — re-exported dynamic-workflows extension (vm-sandboxed JS scripts that fan out to many subagents via `agent()`/`parallel()`/`phase()`; journaled resume, worktree isolation, `/workflows` TUI; see `.pi/skills/subagent-orchestration/SKILL.md` for usage)
 - `node_modules/@teelicht/pi-grepai/src/extension/index.ts` — re-exported GrepAI CLI bridge tools and commands
+- `node_modules/pi-mcp-adapter/index.ts` — re-exported MCP client adapter (token-efficient `mcp` proxy tool; reads `~/.config/mcp/mcp.json` globally and `.mcp.json` per project)
 
 ## Working Rules
 

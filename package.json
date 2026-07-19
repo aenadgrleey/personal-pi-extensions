@@ -12,8 +12,9 @@
       "pi-extensions/check.ts",
       "pi-extensions/clear-input/index.ts",
       "pi-extensions/codex-swap/index.ts",
-      "node_modules/@tunnckocore/pi-gpt-fast-mode/src/index.ts",
+      "pi-extensions/cursor/index.ts",
       "node_modules/pi-cursor-sdk/src/index.ts",
+      "node_modules/@tunnckocore/pi-gpt-fast-mode/src/index.ts",
       "node_modules/@quintinshaw/pi-dynamic-workflows/extensions/workflow.ts",
       "node_modules/@howaboua/pi-codex-conversion/src/index.ts",
       "node_modules/@teelicht/pi-grepai/src/extension/index.ts",
@@ -31,7 +32,8 @@
     "format": "bunx prettier --write .",
     "format:check": "bunx prettier --check .",
     "test:codex-swap": "bun test pi-extensions/codex-swap/*.test.ts",
-    "check": "bun run format:check && bun run test:codex-swap && bun build pi-extensions/check.ts --target=node --outfile=/tmp/pi-check-extension.js && bun build pi-extensions/codex-swap/index.ts --target=node --outfile=/tmp/pi-codex-swap-extension.js"
+    "test:cursor-bridge": "bun test pi-extensions/cursor/*.test.ts",
+    "check": "bun run format:check && bun run test:codex-swap && bun run test:cursor-bridge && bun build pi-extensions/check.ts --target=node --outfile=/tmp/pi-check-extension.js && bun build pi-extensions/codex-swap/index.ts --target=node --outfile=/tmp/pi-codex-swap-extension.js && bun build pi-extensions/cursor/index.ts --target=node --outfile=/tmp/pi-cursor-bridge-extension.js"
   },
   "dependencies": {
     "@earendil-works/pi-agent-core": "^0.78.1",

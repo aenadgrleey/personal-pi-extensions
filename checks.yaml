@@ -14,3 +14,7 @@ checks:
   - name: codex-swap
     command: bun run test:codex-swap && bun build pi-extensions/codex-swap/index.ts --target=node --outfile=/tmp/pi-codex-swap-extension.js
     description: Test and smoke-build the Codex account switcher
+
+  - name: cursor-bridge
+    command: bun run test:cursor-bridge && bun build pi-extensions/cursor/index.ts --target=node --outfile=/tmp/pi-cursor-bridge-extension.js
+    description: Test and smoke-build the Cursor SDK bridge wrapper

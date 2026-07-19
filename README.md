@@ -12,6 +12,7 @@ Read [`.rtango/spec.yaml`](./.rtango/spec.yaml) for the managed skills inventory
 - checks in repository-root `checks.yaml` (with `.pi/checks.yaml` compatibility) and agent config in `.pi/`
 - reusable skills and workflows generated into gitignored `skills/` by rtango from `personal-context-files` and curated upstream collections
 - shared interaction components for interactive extension flows
+- a repo-owned Cursor SDK bridge wrapper in `pi-extensions/cursor/index.ts` that keeps Pi tools exposed over MCP while suppressing closed-iterable shutdown races
 - a re-exported `@quintinshaw/pi-dynamic-workflows` extension that turns one prompt into a fleet of subagents fanning out in parallel via a JS orchestration script in a `vm` sandbox (`agent()`/`parallel()`/`phase()`), with journaled resume, git-worktree isolation, real token / cost accounting, an interactive `/workflows` TUI, and `/deep-research` / `/adversarial-review` / `/ultracode` commands. Auto-triggers on the keyword `workflow`; toggle with `/workflows-trigger on|off`
 - a re-exported `@howaboua/pi-codex-conversion` Codex tool/prompt adapter
 - a local `codex-swap` extension for switching Pi's saved ChatGPT/Codex OAuth accounts
@@ -42,6 +43,17 @@ implement OAuth itself.
 `/codexswap status`, `usage [all|label|#]`, `low` (also `lowest`/`sort`),
 `purge`, `rm`, and `rename` remain available for account management. Commands
 and notifications never display OAuth credential material.
+
+## Local Cursor SDK integration
+
+`pi-extensions/cursor/index.ts` is the local integration layer for the
+installed `pi-cursor-sdk` provider. It suppresses only the documented Cursor
+SDK `WriteIterableClosedError` shutdown race, leaving unrelated uncaught
+exceptions intact. It also enables the local Pi MCP bridge and exposes active
+Pi built-in tools by default, so Cursor workflow agents can call the same Pi
+tool surface. Set `PI_CURSOR_PI_TOOL_BRIDGE=0` to disable the bridge or
+`PI_CURSOR_EXPOSE_BUILTIN_TOOLS=0` to restore upstream's hidden-builtins
+behavior.
 
 Saved OAuth profiles live only in Pi's private global agent directory, in a
 locked `0600` file below `~/.pi/agent/codex-swap/`; its directory is `0700`.

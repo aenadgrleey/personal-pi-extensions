@@ -5,10 +5,13 @@
  *
  * Sources:
  * - OpenAI/Codex: Pi auth storage + `https://chatgpt.com/backend-api/wham/usage`
+ * - Cursor: Cursor Desktop SQLite / macOS keychain session tokens + `https://api2.cursor.sh/aiserver.v1.DashboardService/GetCurrentPeriodUsage`
  * - GLM / z.ai: provider API key + z.ai quota API
  * - MiniMax Token Plan: provider API key + `https://www.minimax.io/v1/token_plan/remains`
  */
 
+import { execFile } from "node:child_process";
+import { join } from "node:path";
 import type { AssistantMessage } from "@mariozechner/pi-ai";
 import type {
   ExtensionAPI,
@@ -20,7 +23,7 @@ import { truncateToWidth, visibleWidth } from "./deps.js";
 type FiveHourQuota = {
   usedPercent: number;
   resetsAt?: number;
-  source: "codex" | "zai" | "minimax";
+  source: "codex" | "cursor" | "zai" | "minimax";
   windows?: UsageWindow[];
 };
 
@@ -33,6 +36,13 @@ type UsageWindow = {
 type CodexAuth = {
   accessToken: string;
   accountId?: string;
+};
+
+type CursorAuth = {
+  accessToken: string;
+  refreshToken?: string;
+  userId?: string;
+  expiresAt?: number;
 };
 
 type PiCodexOAuthCredential = {
@@ -61,15 +71,20 @@ type FooterDataLike = {
 const FIVE_HOURS_MINUTES = 5 * 60;
 const QUOTA_REFRESH_MS = 5 * 60 * 1000;
 const COUNTDOWN_RENDER_MS = 30 * 1000;
+const CURSOR_OAUTH_CLIENT_ID = "KbZUR41cY7W6zRSdpSUJ7I7mLYBKOCmB";
+const CURSOR_REFRESH_MARGIN_MS = 5 * 60 * 1000;
 
 export default function (pi: ExtensionAPI) {
   let quota: FiveHourQuota | undefined;
   let currentCodexAccount: string | undefined;
+  let cursorAuthCache: CursorAuth | undefined;
   let refreshTimer: ReturnType<typeof setInterval> | undefined;
   let countdownTimer: ReturnType<typeof setInterval> | undefined;
   let requestRender: (() => void) | undefined;
   let currentCtx: ExtensionContext | undefined;
   let refreshInFlight = false;
+  let refreshQueued = false;
+  let codexSwapAccountChangedUnsub: (() => void) | undefined;
 
   const clearTimers = () => {
     if (refreshTimer) clearInterval(refreshTimer);
@@ -98,8 +113,14 @@ export default function (pi: ExtensionAPI) {
     return normalized === "minimax" || normalized.includes("minimax");
   };
 
+  const isCursorProvider = (provider?: string) => {
+    const normalized = provider?.toLowerCase() ?? "";
+    return normalized === "cursor" || normalized.includes("cursor");
+  };
+
   const activeProviderNeeds5h = (provider?: string) =>
     isCodexProvider(provider) ||
+    isCursorProvider(provider) ||
     isZaiProvider(provider) ||
     isMinimaxProvider(provider);
 
@@ -144,6 +165,430 @@ export default function (pi: ExtensionAPI) {
       }
     }
     return undefined;
+  };
+
+  const runCommandText = async (
+    command: string,
+    args: string[],
+  ): Promise<string | undefined> =>
+    new Promise((resolve) => {
+      execFile(
+        command,
+        args,
+        { encoding: "utf8", maxBuffer: 1024 * 1024, timeout: 5000 },
+        (error, stdout) => {
+          if (error) {
+            resolve(undefined);
+            return;
+          }
+
+          const output = stdout.trim();
+          resolve(output || undefined);
+        },
+      );
+    });
+
+  const normalizeCursorSecret = (value?: string) => {
+    const trimmed = value?.trim();
+    if (!trimmed) return undefined;
+    if (
+      (trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+      (trimmed.startsWith("'") && trimmed.endsWith("'"))
+    ) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (typeof parsed === "string") {
+          const parsedTrimmed = parsed.trim();
+          return parsedTrimmed || undefined;
+        }
+      } catch {
+        // keep the raw token below
+      }
+    }
+    return trimmed;
+  };
+
+  const sqliteQuoted = (value: string) => `'${value.replaceAll("'", "''")}'`;
+
+  const cursorStateDbPaths = () => {
+    const paths: string[] = [];
+    const homeDir = process.env.HOME?.trim() || process.env.USERPROFILE?.trim();
+    const appData = process.env.APPDATA?.trim();
+
+    if (homeDir) {
+      paths.push(
+        join(
+          homeDir,
+          "Library",
+          "Application Support",
+          "Cursor",
+          "User",
+          "globalStorage",
+          "state.vscdb",
+        ),
+        join(
+          homeDir,
+          ".config",
+          "Cursor",
+          "User",
+          "globalStorage",
+          "state.vscdb",
+        ),
+      );
+    }
+
+    if (appData) {
+      paths.push(
+        join(appData, "Cursor", "User", "globalStorage", "state.vscdb"),
+      );
+    }
+
+    return [...new Set(paths)];
+  };
+
+  const cursorAccessTokenExpiresAt = (accessToken: string) => {
+    const payload = asRecord(decodeJwtPayload(accessToken));
+    const exp = payload ? getNumber(payload, "exp") : undefined;
+    return typeof exp === "number" ? exp * 1000 : undefined;
+  };
+
+  const cursorUserIdFromToken = (accessToken: string) => {
+    const payload = asRecord(decodeJwtPayload(accessToken));
+    const userId = payload?.sub;
+    return typeof userId === "string" && userId.trim()
+      ? userId.trim()
+      : undefined;
+  };
+
+  const buildCursorAuth = (
+    accessToken: string,
+    refreshToken?: string,
+  ): CursorAuth | undefined => {
+    const access = normalizeCursorSecret(accessToken);
+    if (!access) return undefined;
+
+    const refresh = normalizeCursorSecret(refreshToken);
+    return {
+      accessToken: access,
+      refreshToken: refresh,
+      userId: cursorUserIdFromToken(access),
+      expiresAt: cursorAccessTokenExpiresAt(access),
+    };
+  };
+
+  const readCursorSqliteValue = async (dbPath: string, key: string) => {
+    const value = await runCommandText("sqlite3", [
+      "-readonly",
+      "-batch",
+      "-noheader",
+      dbPath,
+      `SELECT value FROM ItemTable WHERE key = ${sqliteQuoted(key)} LIMIT 1;`,
+    ]);
+    return normalizeCursorSecret(value);
+  };
+
+  const readCursorAuthFromSqlite = async (): Promise<
+    CursorAuth | undefined
+  > => {
+    for (const dbPath of cursorStateDbPaths()) {
+      const [accessToken, refreshToken] = await Promise.all([
+        readCursorSqliteValue(dbPath, "cursorAuth/accessToken"),
+        readCursorSqliteValue(dbPath, "cursorAuth/refreshToken"),
+      ]);
+
+      const auth = buildCursorAuth(accessToken ?? "", refreshToken);
+      if (auth) return auth;
+    }
+
+    return undefined;
+  };
+
+  const readCursorAuthFromKeychain = async (): Promise<
+    CursorAuth | undefined
+  > => {
+    if (process.platform !== "darwin") return undefined;
+
+    const [accessToken, refreshToken] = await Promise.all([
+      runCommandText("security", [
+        "find-generic-password",
+        "-a",
+        "cursor-user",
+        "-s",
+        "cursor-access-token",
+        "-w",
+      ]),
+      runCommandText("security", [
+        "find-generic-password",
+        "-a",
+        "cursor-user",
+        "-s",
+        "cursor-refresh-token",
+        "-w",
+      ]),
+    ]);
+
+    return buildCursorAuth(accessToken ?? "", refreshToken);
+  };
+
+  const readCursorAuth = async (): Promise<CursorAuth | undefined> => {
+    const sourceAuth =
+      (await readCursorAuthFromSqlite()) ??
+      (await readCursorAuthFromKeychain());
+
+    if (!sourceAuth) return cursorAuthCache;
+    if (!cursorAuthCache) {
+      cursorAuthCache = sourceAuth;
+      return sourceAuth;
+    }
+
+    if (
+      sourceAuth.userId &&
+      cursorAuthCache.userId &&
+      sourceAuth.userId !== cursorAuthCache.userId
+    ) {
+      cursorAuthCache = sourceAuth;
+      return sourceAuth;
+    }
+
+    const sourceExpiry = sourceAuth.expiresAt ?? 0;
+    const cachedExpiry = cursorAuthCache.expiresAt ?? 0;
+    if (cachedExpiry > Date.now() && cachedExpiry > sourceExpiry) {
+      return cursorAuthCache;
+    }
+
+    cursorAuthCache = sourceAuth;
+    return sourceAuth;
+  };
+
+  const refreshCursorAuth = async (
+    auth: CursorAuth,
+  ): Promise<CursorAuth | undefined> => {
+    if (
+      typeof auth.expiresAt === "number" &&
+      auth.expiresAt <= Date.now() &&
+      !auth.refreshToken
+    ) {
+      return undefined;
+    }
+
+    if (!auth.refreshToken) return auth;
+    if (
+      typeof auth.expiresAt !== "number" ||
+      auth.expiresAt - Date.now() > CURSOR_REFRESH_MARGIN_MS
+    ) {
+      return auth;
+    }
+
+    try {
+      const response = await fetch("https://api2.cursor.sh/oauth/token", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Accept: "application/json",
+        },
+        body: new URLSearchParams({
+          grant_type: "refresh_token",
+          client_id: CURSOR_OAUTH_CLIENT_ID,
+          refresh_token: auth.refreshToken,
+        }),
+      });
+
+      if (!response.ok) return auth;
+
+      const json = asRecord(await response.json());
+      if (!json) return auth;
+      if (json.shouldLogout === true) {
+        cursorAuthCache = undefined;
+        return undefined;
+      }
+
+      const accessToken = normalizeCursorSecret(
+        typeof json.access_token === "string" ? json.access_token : undefined,
+      );
+      if (!accessToken) {
+        cursorAuthCache = undefined;
+        return undefined;
+      }
+
+      const refreshed = buildCursorAuth(
+        accessToken,
+        normalizeCursorSecret(
+          typeof json.refresh_token === "string"
+            ? json.refresh_token
+            : undefined,
+        ) ?? auth.refreshToken,
+      );
+      if (!refreshed) return auth;
+
+      const expiresIn = getNumber(json, "expires_in", "expiresIn");
+      if (typeof expiresIn === "number" && !refreshed.expiresAt) {
+        refreshed.expiresAt = Date.now() + expiresIn * 1000;
+      }
+
+      cursorAuthCache = refreshed;
+      return refreshed;
+    } catch {
+      return auth;
+    }
+  };
+
+  const buildCursorSessionCookie = (auth: CursorAuth) => {
+    if (!auth.userId) return undefined;
+    return `WorkosCursorSessionToken=${encodeURIComponent(
+      `${auth.userId}::${auth.accessToken}`,
+    )}`;
+  };
+
+  const parseCursorUsageResponse = (
+    json: unknown,
+  ): FiveHourQuota | undefined => {
+    const root = asRecord(json);
+    if (!root) return undefined;
+
+    const billingCycleEnd = parseEpochMs(
+      root.billingCycleEnd as number | string | undefined,
+    );
+
+    const planUsage =
+      asRecord(root.planUsage) ??
+      asRecord(asRecord(root.individualUsage)?.plan);
+    if (!planUsage) return undefined;
+
+    const totalPercentUsed = getNumber(planUsage, "totalPercentUsed");
+    const limit = getNumber(planUsage, "limit");
+    const includedSpend = getNumber(
+      planUsage,
+      "includedSpend",
+      "totalSpend",
+      "used",
+    );
+    const remaining = getNumber(planUsage, "remaining");
+
+    let usedPercent = totalPercentUsed;
+    if (
+      typeof usedPercent !== "number" &&
+      typeof limit === "number" &&
+      limit > 0
+    ) {
+      if (typeof includedSpend === "number") {
+        usedPercent =
+          (Math.max(0, Math.min(limit, includedSpend)) / limit) * 100;
+      } else if (typeof remaining === "number") {
+        usedPercent =
+          (Math.max(0, Math.min(limit, limit - remaining)) / limit) * 100;
+      }
+    }
+
+    if (typeof usedPercent !== "number") return undefined;
+
+    const windows: UsageWindow[] = [
+      {
+        label: "plan",
+        usedPercent: clampPercent(usedPercent),
+        resetsAt: billingCycleEnd,
+      },
+    ];
+
+    const apiPercentUsed = getNumber(planUsage, "apiPercentUsed");
+    if (typeof apiPercentUsed === "number") {
+      windows.push({
+        label: "api",
+        usedPercent: clampPercent(apiPercentUsed),
+        resetsAt: billingCycleEnd,
+      });
+    }
+
+    const autoPercentUsed = getNumber(planUsage, "autoPercentUsed");
+    if (typeof autoPercentUsed === "number") {
+      windows.push({
+        label: "auto",
+        usedPercent: clampPercent(autoPercentUsed),
+        resetsAt: billingCycleEnd,
+      });
+    }
+
+    return {
+      usedPercent: windows[0].usedPercent,
+      resetsAt: billingCycleEnd,
+      source: "cursor",
+      windows,
+    };
+  };
+
+  const fetchCursorQuotaFromPrimary = async (
+    auth: CursorAuth,
+  ): Promise<FiveHourQuota | undefined> => {
+    const response = await fetch(
+      "https://api2.cursor.sh/aiserver.v1.DashboardService/GetCurrentPeriodUsage",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${auth.accessToken}`,
+          Accept: "application/json",
+          "Content-Type": "application/json",
+          "Connect-Protocol-Version": "1",
+        },
+        body: "{}",
+      },
+    );
+
+    if (!response.ok) return undefined;
+    return parseCursorUsageResponse(await response.json());
+  };
+
+  const fetchCursorQuotaFromDashboard = async (
+    auth: CursorAuth,
+  ): Promise<FiveHourQuota | undefined> => {
+    const cookie = buildCursorSessionCookie(auth);
+    if (!cookie) return undefined;
+
+    const response = await fetch("https://cursor.com/api/usage-summary", {
+      headers: {
+        Cookie: cookie,
+        Accept: "application/json",
+        "User-Agent": "pi-indicators-extension",
+      },
+    });
+
+    if (!response.ok) return undefined;
+    return parseCursorUsageResponse(await response.json());
+  };
+
+  const fetchCursorQuotaFromRequestBased = async (
+    auth: CursorAuth,
+  ): Promise<FiveHourQuota | undefined> => {
+    const cookie = buildCursorSessionCookie(auth);
+    if (!cookie || !auth.userId) return undefined;
+
+    const response = await fetch(
+      `https://cursor.com/api/usage?user=${encodeURIComponent(auth.userId)}`,
+      {
+        headers: {
+          Cookie: cookie,
+          Accept: "application/json",
+          "User-Agent": "pi-indicators-extension",
+        },
+      },
+    );
+
+    if (!response.ok) return undefined;
+    return parseCursorUsageResponse(await response.json());
+  };
+
+  const fetchCursorFiveHourQuota = async (): Promise<
+    FiveHourQuota | undefined
+  > => {
+    const auth = await readCursorAuth();
+    if (!auth?.accessToken) return undefined;
+
+    const refreshedAuth = await refreshCursorAuth(auth);
+    if (!refreshedAuth?.accessToken) return undefined;
+
+    return (
+      (await fetchCursorQuotaFromPrimary(refreshedAuth)) ??
+      (await fetchCursorQuotaFromDashboard(refreshedAuth)) ??
+      (await fetchCursorQuotaFromRequestBased(refreshedAuth))
+    );
   };
 
   const decodeJwtPayload = (
@@ -607,13 +1052,18 @@ export default function (pi: ExtensionAPI) {
   };
 
   const refreshQuota = async (ctx: ExtensionContext) => {
-    if (refreshInFlight) return;
+    if (refreshInFlight) {
+      refreshQueued = true;
+      return;
+    }
     refreshInFlight = true;
 
     try {
       const provider = ctx.model?.provider?.toLowerCase();
       if (isCodexProvider(provider)) {
         quota = await fetchCodexFiveHourQuota(ctx);
+      } else if (isCursorProvider(provider)) {
+        quota = await fetchCursorFiveHourQuota();
       } else if (isZaiProvider(provider)) {
         const providerId = ctx.model?.provider;
         const apiKey = providerId
@@ -640,6 +1090,10 @@ export default function (pi: ExtensionAPI) {
     } finally {
       refreshInFlight = false;
       requestRender?.();
+      if (refreshQueued) {
+        refreshQueued = false;
+        void refreshQuota(ctx);
+      }
     }
   };
 
@@ -652,6 +1106,18 @@ export default function (pi: ExtensionAPI) {
       clearTimers();
       quota = undefined;
       currentCodexAccount = undefined;
+      cursorAuthCache = undefined;
+      refreshQueued = false;
+
+      codexSwapAccountChangedUnsub?.();
+      codexSwapAccountChangedUnsub = pi.events.on(
+        "codexswap:account-changed",
+        () => {
+          if (!currentCtx?.hasUI) return;
+          currentCodexAccount = undefined;
+          void refreshQuota(currentCtx);
+        },
+      );
 
       ctx.ui.setFooter(
         (
@@ -764,9 +1230,13 @@ export default function (pi: ExtensionAPI) {
 
   pi.on("session_shutdown", async () => {
     clearTimers();
+    codexSwapAccountChangedUnsub?.();
+    codexSwapAccountChangedUnsub = undefined;
+    refreshQueued = false;
     requestRender = undefined;
     currentCtx = undefined;
     quota = undefined;
     currentCodexAccount = undefined;
+    cursorAuthCache = undefined;
   });
 }

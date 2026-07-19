@@ -18,3 +18,7 @@ checks:
   - name: cursor-bridge
     command: bun run test:cursor-bridge && bun build pi-extensions/cursor/index.ts --target=node --outfile=/tmp/pi-cursor-bridge-extension.js
     description: Test and smoke-build the Cursor SDK bridge wrapper
+
+  - name: indicators
+    command: bun run test:indicators && bun build pi-extensions/indicators.ts --target=node --outfile=/tmp/pi-indicators-extension.js
+    description: Test and smoke-build footer indicator updates

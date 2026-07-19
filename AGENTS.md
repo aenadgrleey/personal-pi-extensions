@@ -26,7 +26,7 @@ Skills may live in `personal-context-files` or this repo's `skills/` package. Re
 
 - `pi-extensions/ask/` — interactive question/answer UI tool
 - `pi-extensions/interaction-components/` — shared interaction contract, hub, local provider, and a pub/sub event hook (`addInteractionListener` / `emitInteraction`) fired by the ask entry point for both bridge and local-fallback paths
-- `pi-extensions/indicators.ts` — footer/status indicator customization
+- `pi-extensions/indicators.ts` — footer/status indicator customization, including Codex/Cursor/Z.ai/MiniMax quota display
 - `pi-extensions/system-context/index.ts` — optional system-prompt injector for active model notes (not loaded by default)
 - `pi-extensions/notify.ts` — desktop notification helper and commands (fires on `agent_end`)
 - `pi-extensions/interaction-notifier.ts` — desktop notifications for ask interaction events (macOS `osascript`, toggle via `/notif-config [ask]`)
